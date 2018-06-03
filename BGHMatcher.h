@@ -254,6 +254,15 @@ namespace BGHMatcher
     }
 
 
+    // Make new blurred image using specified kernel size and blurring type.
+    // Blurring operation can be done in-place.
+    void blur_img(
+        cv::Mat& rsrc,
+        cv::Mat& rdst,
+        const int kblur,
+        const int blur_type);
+
+
     // Creates a set with all 8-bit values that have the specified number(s) of adjacent bits.
     // The bits in the mask specify the number of adjacent bits to consider.
     // Default argument is for using 4 adjacent bits which seems like best starting point.
@@ -274,7 +283,7 @@ namespace BGHMatcher
     // Default arguments are good starting point for doing object identification.
     // Table must be a newly created object with blank data.
     void init_ghough_table_from_img(
-        const cv::Mat& rimg,
+        cv::Mat& rimg,
         BGHMatcher::T_ghough_table& rtable,
         const int kblur = 7,
         const int blur_type = BGHMatcher::BLUR_BOX);

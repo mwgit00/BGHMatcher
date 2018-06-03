@@ -27,6 +27,24 @@
 
 namespace BGHMatcher
 {
+    void blur_img(cv::Mat& rsrc, cv::Mat& rdst, const int kblur, const int blur_type)
+    {
+        switch (blur_type)
+        {
+        case BGHMatcher::BLUR_GAUSS:
+            GaussianBlur(rsrc, rdst, { kblur, kblur }, 0);
+            break;
+        case BGHMatcher::BLUR_MEDIAN:
+            medianBlur(rsrc, rdst, kblur);
+            break;
+        case BGHMatcher::BLUR_BOX:
+        default:
+            blur(rsrc, rdst, { kblur, kblur });
+            break;
+        }
+    }
+
+
     void create_adjacent_bits_set(
         BGHMatcher::T_256_flags& rflags,
         const uint8_t mask)
@@ -93,7 +111,7 @@ namespace BGHMatcher
 
 
     void init_ghough_table_from_img(
-        const cv::Mat& rimg,
+        cv::Mat& rimg,
         BGHMatcher::T_ghough_table& rtable,
         const int kblur,
         const int blur_type)
@@ -104,23 +122,12 @@ namespace BGHMatcher
         BGHMatcher::T_256_flags flags;
         BGHMatcher::create_adjacent_bits_set(flags, BGHMatcher::N8_4ADJ);
 
-        // apply pre-blur to source image
+        // create pre-blurred version of target image
         // same blur should be applied to input image when looking for matches
-        switch (blur_type)
-        {
-        case BGHMatcher::BLUR_GAUSS:
-            GaussianBlur(rimg, img_target, { kblur, kblur }, 0);
-            break;
-        case BGHMatcher::BLUR_MEDIAN:
-            medianBlur(rimg, img_target, kblur);
-            break;
-        case BGHMatcher::BLUR_BOX:
-        default:
-            blur(rimg, img_target, { kblur, kblur });
-            break;
-        }
+        blur_img(rimg, img_target, kblur, blur_type);
 
         // create binary gradient image from blurred target image
+        // and create Generalized Hough lookup table from it
         BGHMatcher::cmp8NeighborsGT<uint8_t>(img_target, img_bgrad);
         BGHMatcher::create_ghough_table(img_bgrad, flags, rtable);
 
