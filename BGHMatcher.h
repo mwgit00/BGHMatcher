@@ -35,6 +35,15 @@
 
 namespace BGHMatcher
 {
+    // Masks for selecting number of adjacent bits to consider.
+    // Using combinations of 4 or 5 adjacent pixels seems to be best choice.
+    enum
+    {
+        N8_4ADJ = (1 << 3), // consider 4 adjacent pixels (usually best choice)
+        N8_5ADJ = (1 << 4), // consider 5 adjacent pixels
+        N8_4OR5 = (3 << 3), // consider 4 or 5 adjacent pixels
+    };
+    
     // Non-STL data structure for Generalized Hough data "template"
     typedef struct _T_ghough_data_struct
     {
@@ -69,7 +78,7 @@ namespace BGHMatcher
     
     // Compares a central pixel with its 8-neighbors and sets bits if central pixel is larger.
     // This produces a "binary gradient" image with features for Generalized Hough transform.
-    // Local MAXIMA can be identified by looking for output pixel value 255.
+    // An output pixel with a value of 255 is greater than all of its 8-neighbors.
     template<typename T>
     void cmp8NeighborsGT(const cv::Mat& rsrc, cv::Mat& rdst)
     {
@@ -116,7 +125,7 @@ namespace BGHMatcher
 
     // Compares a central pixel with its 8-neighbors and sets bits if central pixel is smaller.
     // This produces a "binary gradient" image with features for Generalized Hough transform.
-    // Local MINIMA can be identified by looking for output pixel value 255.
+    // An output pixel with a value of 255 is less than all of its 8-neighbors.
     template<typename T>
     void cmp8NeighborsLT(const cv::Mat& rsrc, cv::Mat& rdst)
     {
@@ -161,26 +170,28 @@ namespace BGHMatcher
     }
 
 
-    // Creates a set with all 8-bit values with the specified number(s) of adjacent bits.
+    // Creates a set with all 8-bit values that have the specified number(s) of adjacent bits.
     // The bits in the mask specify the number of adjacent bits to consider.
-    void create_adjacent_bits_set(const uint8_t mask, BGHMatcher::T_256_flags& rflags);
+    void create_adjacent_bits_set(
+        BGHMatcher::T_256_flags& rflags,
+        const uint8_t mask = BGHMatcher::N8_4ADJ);
 
 
-    // Creates a Generalized Hough data "template" from an input image.
-    // A flag set determines which binary gradient pixel values to use.
+    // Creates a Generalized Hough data "template" from binary gradient input image (CV_8U).
+    // A set of flags determines which binary gradient pixel values to use.
     void create_ghough_data(
-        const cv::Mat& rsrc,
-        const int kblur,
+        const cv::Mat& rbgrad,
         const BGHMatcher::T_256_flags& rflags,
         BGHMatcher::T_ghough_data& rdata);
 
 
     // Applies Generalized Hough data "template" to an input image.
-    // Maxima in the output image indicate good matches.
+    // Output is CV_8U image of same size as input.  Maxima indicate good matches.
+    // Pixels near border and within half the X or Y dimensions of the template will be 0.
     void apply_ghough_transform(
-        const BGHMatcher::T_ghough_data& rdata,
         const cv::Mat& rimg,
-        cv::Mat& rout);
+        cv::Mat& rout,
+        const BGHMatcher::T_ghough_data& rdata);
 };
 
 #endif // BGH_MATCHER_H_

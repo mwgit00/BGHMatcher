@@ -25,7 +25,9 @@
 #include "BGHMatcher.h"
 
 
-void BGHMatcher::create_adjacent_bits_set(const uint8_t mask, BGHMatcher::T_256_flags& rflags)
+void BGHMatcher::create_adjacent_bits_set(
+    BGHMatcher::T_256_flags& rflags,
+    const uint8_t mask)
 {
     for (int i = 0; i < 8; i++)
     {
@@ -46,30 +48,20 @@ void BGHMatcher::create_adjacent_bits_set(const uint8_t mask, BGHMatcher::T_256_
 
 
 void BGHMatcher::create_ghough_data(
-    const cv::Mat& rsrc,
-    const int kblur,
+    const cv::Mat& rbgrad,
     const BGHMatcher::T_256_flags& rflags,
     BGHMatcher::T_ghough_data& rdata)
 {
-    cv::Mat img_temp;
-    cv::Mat img_bgrad;
-
-    // apply pre-blur to template source image
-    GaussianBlur(rsrc, img_temp, { kblur, kblur }, 0);
-
-    // create binary gradient image
-    cmp8NeighborsGT<uint8_t>(img_temp, img_bgrad);
-
     // calculate centering offset
-    int row_offset = img_bgrad.rows / 2;
-    int col_offset = img_bgrad.cols / 2;
+    int row_offset = rbgrad.rows / 2;
+    int col_offset = rbgrad.cols / 2;
 
     // use STL structures to build a lookup table dynamically
     std::map<uint8_t, std::list<cv::Point>> lookup_table;
-    for (int i = 0; i < img_bgrad.rows; i++)
+    for (int i = 0; i < rbgrad.rows; i++)
     {
-        const uint8_t * pix = img_bgrad.ptr<uint8_t>(i);
-        for (int j = 0; j < img_bgrad.cols; j++)
+        const uint8_t * pix = rbgrad.ptr<uint8_t>(i);
+        for (int j = 0; j < rbgrad.cols; j++)
         {
             const uint8_t uu = pix[j];
             if (rflags.get(uu))
@@ -80,9 +72,8 @@ void BGHMatcher::create_ghough_data(
     }
 
     // then put lookup table into a fixed non-STL structure
-    // that's much more efficient for debugging
-    rdata.sz = rsrc.size();
-    rdata.kblur = kblur;
+    // that's much more efficient running debug code
+    rdata.sz = rbgrad.size();
     for (const auto& r : lookup_table)
     {
         uint8_t key = r.first;
@@ -100,9 +91,9 @@ void BGHMatcher::create_ghough_data(
 
 
 void BGHMatcher::apply_ghough_transform(
-    const BGHMatcher::T_ghough_data& rdata,
     const cv::Mat& rimg,
-    cv::Mat& rout)
+    cv::Mat& rout,
+    const BGHMatcher::T_ghough_data& rdata)
 {
     rout = cv::Mat::zeros(rimg.size(), CV_32F);
     for (int i = rdata.sz.height / 2; i < rimg.rows - rdata.sz.height / 2; i++)
@@ -110,11 +101,14 @@ void BGHMatcher::apply_ghough_transform(
         const uint8_t * pix = rimg.ptr<uint8_t>(i);
         for (int j = rdata.sz.width / 2; j < rimg.cols - rdata.sz.width / 2; j++)
         {
+            // look up voting table for pixel
+            // iterate through the points (if any) and add votes
             uint8_t uu = pix[j];
+            cv::Point * pts = rdata.elem[uu].pts;
             const size_t ct = rdata.elem[uu].ct;
             for (size_t k = 0; k < ct; k++)
             {
-                const cv::Point& rp = rdata.elem[uu].pts[k];
+                const cv::Point& rp = pts[k];
                 int mx = (j + rp.x);
                 int my = (i + rp.y);
                 float * pix = rout.ptr<float>(my) + mx;
