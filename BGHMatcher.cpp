@@ -25,95 +25,107 @@
 #include "BGHMatcher.h"
 
 
-void BGHMatcher::create_adjacent_bits_set(
-    BGHMatcher::T_256_flags& rflags,
-    const uint8_t mask)
+namespace BGHMatcher
 {
-    for (int i = 0; i < 8; i++)
+    void create_adjacent_bits_set(
+        BGHMatcher::T_256_flags& rflags,
+        const uint8_t mask)
     {
-        if (mask & (1 << i))
+        for (int i = 0; i < 8; i++)
         {
-            uint8_t num_bits_in_mask = i + 1;
-            uint8_t bit_mask = (1 << num_bits_in_mask) - 1;
-            for (int j = 0; j < 8; j++)
+            if (mask & (1 << i))
             {
-                uint8_t rot_bit_mask_L = (bit_mask << j);
-                uint8_t rot_bit_mask_R = (bit_mask >> (8 - j));
-                uint8_t rot_bit_mask = rot_bit_mask_L | rot_bit_mask_R;
-                rflags.set(rot_bit_mask);
-            }
-        }
-    }
-}
-
-
-void BGHMatcher::create_ghough_data(
-    const cv::Mat& rbgrad,
-    const BGHMatcher::T_256_flags& rflags,
-    BGHMatcher::T_ghough_data& rdata)
-{
-    // calculate centering offset
-    int row_offset = rbgrad.rows / 2;
-    int col_offset = rbgrad.cols / 2;
-
-    // use STL structures to build a lookup table dynamically
-    std::map<uint8_t, std::list<cv::Point>> lookup_table;
-    for (int i = 0; i < rbgrad.rows; i++)
-    {
-        const uint8_t * pix = rbgrad.ptr<uint8_t>(i);
-        for (int j = 0; j < rbgrad.cols; j++)
-        {
-            const uint8_t uu = pix[j];
-            if (rflags.get(uu))
-            {
-                lookup_table[uu].push_back(cv::Point(col_offset - j, row_offset - i));
+                uint8_t num_bits_in_mask = i + 1;
+                uint8_t bit_mask = (1 << num_bits_in_mask) - 1;
+                for (int j = 0; j < 8; j++)
+                {
+                    uint8_t rot_bit_mask_L = (bit_mask << j);
+                    uint8_t rot_bit_mask_R = (bit_mask >> (8 - j));
+                    uint8_t rot_bit_mask = rot_bit_mask_L | rot_bit_mask_R;
+                    rflags.set(rot_bit_mask);
+                }
             }
         }
     }
 
-    // then put lookup table into a fixed non-STL structure
-    // that's much more efficient running debug code
-    rdata.sz = rbgrad.size();
-    for (const auto& r : lookup_table)
-    {
-        uint8_t key = r.first;
-        size_t n = r.second.size();
-        rdata.elem[key].ct = n;
-        rdata.elem[key].pts = new cv::Point[n];
-        size_t k = 0;
-        for (const auto& rr : r.second)
-        {
-            rdata.elem[key].pts[k++] = rr;
-        }
-        rdata.total += n;
-    }
-}
 
-
-void BGHMatcher::apply_ghough_transform(
-    const cv::Mat& rimg,
-    cv::Mat& rout,
-    const BGHMatcher::T_ghough_data& rdata)
-{
-    rout = cv::Mat::zeros(rimg.size(), CV_32F);
-    for (int i = rdata.sz.height / 2; i < rimg.rows - rdata.sz.height / 2; i++)
+    void create_ghough_table(
+        const cv::Mat& rbgrad,
+        const BGHMatcher::T_256_flags& rflags,
+        BGHMatcher::T_ghough_table& rtable)
     {
-        const uint8_t * pix = rimg.ptr<uint8_t>(i);
-        for (int j = rdata.sz.width / 2; j < rimg.cols - rdata.sz.width / 2; j++)
+        // calculate centering offset
+        int row_offset = rbgrad.rows / 2;
+        int col_offset = rbgrad.cols / 2;
+
+        // use STL structures to build a lookup table dynamically
+        std::map<uint8_t, std::list<cv::Point>> lookup_table;
+        for (int i = 0; i < rbgrad.rows; i++)
         {
-            // look up voting table for pixel
-            // iterate through the points (if any) and add votes
-            uint8_t uu = pix[j];
-            cv::Point * pts = rdata.elem[uu].pts;
-            const size_t ct = rdata.elem[uu].ct;
-            for (size_t k = 0; k < ct; k++)
+            const uint8_t * pix = rbgrad.ptr<uint8_t>(i);
+            for (int j = 0; j < rbgrad.cols; j++)
             {
-                const cv::Point& rp = pts[k];
-                int mx = (j + rp.x);
-                int my = (i + rp.y);
-                float * pix = rout.ptr<float>(my) + mx;
-                *pix += 1.0;
+                const uint8_t uu = pix[j];
+                if (rflags.get(uu))
+                {
+                    lookup_table[uu].push_back(cv::Point(col_offset - j, row_offset - i));
+                }
             }
         }
+
+        // then put lookup table into a fixed non-STL structure
+        // that's much more efficient when running debug code
+        rtable.sz = rbgrad.size();
+        for (const auto& r : lookup_table)
+        {
+            uint8_t key = r.first;
+            size_t n = r.second.size();
+            rtable.elem[key].ct = n;
+            rtable.elem[key].pts = new cv::Point[n];
+            size_t k = 0;
+            for (const auto& rr : r.second)
+            {
+                rtable.elem[key].pts[k++] = rr;
+            }
+            rtable.total_votes += n;
+        }
+    }
+
+
+    void init_ghough_table_from_img(
+        const cv::Mat& rimg,
+        BGHMatcher::T_ghough_table& rtable,
+        const int kblur,
+        const int blur_type)
+    {
+        cv::Mat img_bgrad;
+        cv::Mat img_target;
+
+        BGHMatcher::T_256_flags flags;
+        BGHMatcher::create_adjacent_bits_set(flags, BGHMatcher::N8_4ADJ);
+
+        // apply pre-blur to source image
+        // same blur should be applied to input image when looking for matches
+        switch (blur_type)
+        {
+        case BGHMatcher::BLUR_GAUSS:
+            GaussianBlur(rimg, img_target, { kblur, kblur }, 0);
+            break;
+        case BGHMatcher::BLUR_MEDIAN:
+            medianBlur(rimg, img_target, kblur);
+            break;
+        case BGHMatcher::BLUR_BOX:
+        default:
+            blur(rimg, img_target, { kblur, kblur });
+            break;
+        }
+
+        // create binary gradient image from blurred target image
+        BGHMatcher::cmp8NeighborsGT<uint8_t>(img_target, img_bgrad);
+        BGHMatcher::create_ghough_table(img_bgrad, flags, rtable);
+
+        // save metadata for lookup table
+        rtable.kblur = kblur;
+        rtable.blur_type = blur_type;
     }
 }
