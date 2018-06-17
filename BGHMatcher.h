@@ -181,7 +181,7 @@ namespace BGHMatcher
             const T * pixspp = pixsp0 + 1;
 
             // initialize pointer to output pixel
-            T * pixd = rdst.ptr<T>(i) + 1;
+            uint8_t * pixd = rdst.ptr<T>(i) + 1;
 
             // iterate along row
             // new output pixel value is the "less than" mask for its 8-neighbors
@@ -277,7 +277,17 @@ namespace BGHMatcher
         }
     }
 
+    
+    // Calculate gradient magnitude of input grayscale image.
+    // Create a mask for all gradient magnitudes above a threshold.
+    // Use mask to zero pixels in a second CV_8U image corresponding to small gradients.
+    void apply_sobel_gradient_mask(
+        const cv::Mat& rimg,
+        cv::Mat& rmod,
+        const int kblur,
+        const double mag_thr);
 
+    
     // Make new blurred image using specified kernel size and blurring type.
     // Blurring operation can be done in-place.
     void blur_img(

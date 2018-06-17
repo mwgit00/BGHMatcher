@@ -61,6 +61,35 @@ namespace BGHMatcher
     }
 
 
+    void apply_sobel_gradient_mask(
+        const cv::Mat& rimg,
+        cv::Mat& rmod,
+        const int kblur,
+        const double mag_thr)
+    {
+        double qmax;
+        cv::Mat temp_dx;
+        cv::Mat temp_dy;
+        cv::Mat temp_mag;
+        cv::Mat temp_a;
+        cv::Mat temp_mask;
+        const int SOBEL_DEPTH = CV_32F;
+
+        // calculate X and Y gradients for input image
+        cv::Sobel(rimg, temp_dx, SOBEL_DEPTH, 1, 0, kblur);
+        cv::Sobel(rimg, temp_dy, SOBEL_DEPTH, 0, 1, kblur);
+
+        // create gradient magnitude mask
+        // everything above a fraction of the max will be kept
+        cv::cartToPolar(temp_dx, temp_dy, temp_mag, temp_a);
+        cv::minMaxLoc(temp_mag, nullptr, &qmax);
+        temp_mask = (temp_mag > (qmax * mag_thr));
+
+        // apply mask to image to be modified
+        rmod = temp_mask & rmod;
+    }
+
+
     void create_adjacent_bits_set(
         BGHMatcher::T_256_flags& rflags,
         const uint8_t mask)
@@ -122,7 +151,7 @@ namespace BGHMatcher
         }
 
         // then put lookup table into a fixed non-STL structure
-        // that's much more efficient when running debug code
+        // that is much more efficient when running debug code
         rtable.sz = rbgrad.size();
         for (const auto& r : lookup_table)
         {
@@ -171,26 +200,7 @@ namespace BGHMatcher
         // a threshold >= 1.0 means 100% of points are used and no masking is done
         if ((rparams.mag_thr > 0.0) && (rparams.mag_thr < 1.0))
         {
-            double qmax;
-            cv::Mat temp_dx;
-            cv::Mat temp_dy;
-            cv::Mat temp_m;
-            cv::Mat temp_a;
-            const int SOBEL_DEPTH = CV_32F;
-
-            // calculate X and Y gradients
-            // they will become the gradient template images
-            cv::Sobel(img_target, temp_dx, SOBEL_DEPTH, 1, 0, rparams.kblur);
-            cv::Sobel(img_target, temp_dy, SOBEL_DEPTH, 0, 1, rparams.kblur);
-
-            // create gradient magnitude mask
-            // everything above the threshold (a fraction of the max) will be considered valid
-            cv::cartToPolar(temp_dx, temp_dy, temp_m, temp_a);
-            cv::minMaxLoc(temp_m, nullptr, &qmax);
-            temp_mask = (temp_m > (qmax * rparams.mag_thr));
-            
-            // apply mask to binary gradient image
-            img_bgrad = temp_mask & img_bgrad;
+            apply_sobel_gradient_mask(rimg, img_bgrad, rparams.kblur, rparams.mag_thr);
         }
 
         // create Generalized Hough lookup table from binary gradient image
