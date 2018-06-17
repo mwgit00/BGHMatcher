@@ -51,22 +51,45 @@ namespace BGHMatcher
         N8_4OR5 = (3 << 3), // consider 4 or 5 adjacent pixels
     };
     
+
+    // structure that combines an image point and a vote count for that point
+    typedef struct _T_pt_votes_struct
+    {
+        cv::Point pt;
+        uint16_t votes;
+        _T_pt_votes_struct() : pt{}, votes(0) {}
+        _T_pt_votes_struct(const cv::Point& _pt, const uint16_t _v) : pt{_pt}, votes(_v) {}
+    } T_pt_votes;
+    
+
+    // parameters used to create Generalized Hough lookup table
+    typedef struct _T_ghough_params_struct
+    {
+        int kblur;
+        int blur_type;
+        double scale;
+        double mag_thr;
+        _T_ghough_params_struct() : kblur(7), blur_type(BLUR_GAUSS), scale(1.0), mag_thr(1.0) {}
+        _T_ghough_params_struct(const int i, const int j, const double s, const double t) :
+            kblur(i), blur_type(j), scale(s), mag_thr(t) {}
+    } T_ghough_params;
+    
     
     // Non-STL data structure for Generalized Hough lookup table
     typedef struct _T_ghough_table_struct
     {
+        T_ghough_params params;
         cv::Size sz;
-        int blur_type;
-        int kblur;
         size_t total_votes;
+        size_t total_entries;
         struct _elem_struct
         {
             size_t ct;
-            cv::Point * pts;
-            _elem_struct() : ct(0), pts(nullptr) {}
-            ~_elem_struct() { if (pts != nullptr) { delete[] pts; } }
+            T_pt_votes * pt_votes;
+            _elem_struct() : ct(0), pt_votes(nullptr) {}
+            ~_elem_struct() { if (pt_votes != nullptr) { delete[] pt_votes; } }
         } elem[256];
-        _T_ghough_table_struct() : sz(0, 0), blur_type(0), kblur(0), total_votes(0) {}
+        _T_ghough_table_struct() : params(), sz(0, 0), total_votes(0), total_entries(0) {}
     } T_ghough_table;
 
 
@@ -79,6 +102,7 @@ namespace BGHMatcher
         void set(const uint8_t n) { bits[n >> 5] |= (1 << (n & 0x1F)); }
         void clr(const uint8_t n) { bits[n >> 5] &= ~(1 << (n & 0x1F)); }
         bool get(const uint8_t n) const { return (bits[n >> 5] & (1 << (n & 0x1F))) ? true : false; }
+        void set_all(void) { memset(bits, 0xFF, sizeof(bits)); }
     } T_256_flags;
 
 
@@ -108,7 +132,7 @@ namespace BGHMatcher
             const T * pixspp = pixsp0 + 1;
 
             // initialize pointer to output pixel
-            T * pixd = rdst.ptr<T>(i) + 1;
+            uint8_t * pixd = rdst.ptr<uint8_t>(i) + 1;
 
             // iterate along row
             // new output pixel value is the "greater than" mask for its 8-neighbors
@@ -200,15 +224,15 @@ namespace BGHMatcher
                 // look up voting table for pixel
                 // iterate through the points (if any) and add votes
                 uint8_t uu = pix[j];
-                cv::Point * pts = rtable.elem[uu].pts;
+                T_pt_votes * pt_votes = rtable.elem[uu].pt_votes;
                 const size_t ct = rtable.elem[uu].ct;
                 for (size_t k = 0; k < ct; k++)
                 {
-                    const cv::Point& rp = pts[k];
+                    const cv::Point& rp = pt_votes[k].pt;
                     int mx = (j + rp.x);
                     int my = (i + rp.y);
                     T * pix = rout.ptr<T>(my) + mx;
-                    *pix += 1;
+                    *pix += pt_votes[k].votes;
                 }
             }
         }
@@ -234,19 +258,19 @@ namespace BGHMatcher
                 // look up voting table for pixel
                 // iterate through the points (if any) and add votes
                 uint8_t uu = pix[j];
-                cv::Point * pts = rtable.elem[uu].pts;
+                T_pt_votes * pt_votes = rtable.elem[uu].pt_votes;
                 const size_t ct = rtable.elem[uu].ct;
                 for (size_t k = 0; k < ct; k++)
                 {
                     // only vote if pixel is within output image bounds
-                    const cv::Point& rp = pts[k];
+                    const cv::Point& rp = pt_votes[k].pt;
                     int mx = (j + rp.x);
                     int my = (i + rp.y);
                     if ((mx >= 0) && (mx < rout.cols) &&
                         (my >= 0) && (my < rout.rows))
                     {
                         T * pix = rout.ptr<T>(my) + mx;
-                        *pix += 1;
+                        *pix += pt_votes[k].votes;
                     }
                 }
             }
@@ -273,20 +297,21 @@ namespace BGHMatcher
 
     // Creates a Generalized Hough lookup table from binary gradient input image (CV_8U).
     // A set of flags determines which binary gradient pixel values to use.
+    // The scale parameter shrinks or expands the point set.
     void create_ghough_table(
         const cv::Mat& rbgrad,
         const BGHMatcher::T_256_flags& rflags,
+        const double scale,
         BGHMatcher::T_ghough_table& rtable);
 
 
     // Helper function for initializing Generalized Hough table from grayscale image.
-    // Default arguments are good starting point for doing object identification.
+    // Default parameters are good starting point for doing object identification.
     // Table must be a newly created object with blank data.
     void init_ghough_table_from_img(
         cv::Mat& rimg,
         BGHMatcher::T_ghough_table& rtable,
-        const int kblur = 7,
-        const int blur_type = BGHMatcher::BLUR_BOX);
+        const BGHMatcher::T_ghough_params& rparams);
 }
 
 #endif // BGH_MATCHER_H_
