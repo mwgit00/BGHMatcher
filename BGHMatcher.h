@@ -87,9 +87,16 @@ namespace BGHMatcher
             size_t ct;
             T_pt_votes * pt_votes;
             _elem_struct() : ct(0), pt_votes(nullptr) {}
-            ~_elem_struct() { if (pt_votes != nullptr) { delete[] pt_votes; } }
+            void clear() { ct = 0;  if (pt_votes) { delete[] pt_votes; } pt_votes = nullptr; }
         } elem[256];
         _T_ghough_table_struct() : params(), sz(0, 0), total_votes(0), total_entries(0) {}
+        void clear()
+        {
+            sz = { 0,0 };
+            total_votes = 0;
+            total_entries = 0;
+            for (size_t i = 0; i < 256; i++) { elem[i].clear(); }
+        }
     } T_ghough_table;
 
 

@@ -150,6 +150,9 @@ namespace BGHMatcher
             }
         }
 
+        // blow away any old data in table
+        rtable.clear();
+
         // then put lookup table into a fixed non-STL structure
         // that is much more efficient when running debug code
         rtable.sz = rbgrad.size();
@@ -170,6 +173,7 @@ namespace BGHMatcher
         }
     }
 
+    
     void init_ghough_table_from_img(
         cv::Mat& rimg,
         BGHMatcher::T_ghough_table& rtable,
