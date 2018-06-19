@@ -45,24 +45,25 @@ using namespace cv;
 #define SCA_BLACK   (cv::Scalar(0,0,0))
 #define SCA_RED     (cv::Scalar(0,0,255))
 #define SCA_GREEN   (cv::Scalar(0,255,0))
+#define SCA_BLUE    (cv::Scalar(255,0,0))
+#define SCA_MAGENTA (cv::Scalar(255,0,255))
 #define SCA_YELLOW  (cv::Scalar(0,255,255))
+#define SCA_WHITE   (cv::Scalar(255,255,255))
 
 
+Mat template_image;
 const char * stitle = "BGHMatcher";
 int n_record_ctr = 0;
-
+size_t nfile = 0;
 
 const std::vector<T_file_info> vfiles =
 {
-    { 0.05, "circle_b_on_w.png"},
+    { 0.10, "circle_b_on_w.png"},
     { 0.20, "bottle_20perc_top_b_on_w.png"},
     { 0.10, "outlet_cover.png"},
-    { 0.10, "outlet_holes.png" },
     { 0.20, "panda_face.png"},
     { 0.05, "stars_main.png"}
 };
-
-size_t nfile = 0U;
 
 
 bool wait_and_check_keys(Knobs& rknobs)
@@ -97,6 +98,7 @@ void image_output(
     const Knobs& rknobs,
     BGHMatcher::T_ghough_table& rtable)
 {
+    const int h_score = 16;
     const Size& rsz = rtable.sz;
     const Point corner = { rptmax.x - rsz.width / 2, rptmax.y - rsz.height / 2 };
 
@@ -104,50 +106,48 @@ void image_output(
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(2) << (qmax / rtable.total_votes);
 
-    // draw black background box
-    // then draw text score on top of it
-    rectangle(rimg, { 0,0,40,16 }, SCA_BLACK, -1);
-    putText(rimg, oss.str(), { 0,12 }, FONT_HERSHEY_PLAIN, 1.0, SCA_GREEN, 1);
+    // draw black background box then draw text score on top of it
+    rectangle(rimg, { corner.x,corner.y - h_score, 40, h_score }, SCA_BLACK, -1);
+    putText(rimg, oss.str(), { corner.x,corner.y - 4}, FONT_HERSHEY_PLAIN, 1.0, SCA_WHITE, 1);
 
-    // draw rectangle around best match
+    // draw rectangle around best match with yellow dot at center
     rectangle(rimg, { corner.x, corner.y, rsz.width, rsz.height }, SCA_GREEN, 2);
     circle(rimg, rptmax, 2, SCA_YELLOW, -1);
 
+    // draw current template in upper right corner with blue box around it
+    Mat bgr_template_img;
+    cvtColor(template_image, bgr_template_img, COLOR_GRAY2BGR);
+    Size osz = rimg.size();
+    Size tsz = template_image.size();
+    Rect roi = cv::Rect(osz.width - tsz.width, 0, tsz.width, tsz.height);
+    bgr_template_img.copyTo(rimg(roi));
+
     // save each frame to a file if recording
+    // and use magenta box around template image
+    cv::Scalar box_color = SCA_BLUE;
     if (rknobs.get_record_enabled())
     {
         std::ostringstream osx;
         osx << MOVIE_PATH << "img_" << std::setfill('0') << std::setw(5) << n_record_ctr << ".png";
         imwrite(osx.str(), rimg);
         n_record_ctr++;
-        
-        // red border around score box if recording
-        rectangle(rimg, { 0,0,40,16 }, SCA_RED, 1);
+        box_color = SCA_MAGENTA;
     }
-    
+
+    rectangle(rimg, { osz.width - tsz.width, 0 }, { osz.width, tsz.height }, box_color, 2);
+
     cv::imshow(stitle, rimg);
 }
 
 
 void reload_template(BGHMatcher::T_ghough_table& rtable, const T_file_info& rinfo, const int ksize)
 {
-    const char * sxymtitle = "DX, DY, and Mask";
-    const int KPAD = 4;
-    const int KW = 480;
-    const int KH = 160;
-    Mat tdxdym = Mat::zeros({ KW, KH }, CV_8S);
     std::string spath = DATA_PATH + rinfo.sname;
-
-    // clear the window
-    imshow(sxymtitle, tdxdym);
-
-    Mat img = imread(spath, IMREAD_GRAYSCALE);
-    BGHMatcher::init_ghough_table_from_img(img, rtable, { ksize, BGHMatcher::BLUR_GAUSS, 1.0, rinfo.mag_thr });
-    std::cout << "Loaded template (size= " << ksize << "): " << rinfo.sname << " " << rtable.total_votes << std::endl;
-
-    // TODO -- display the template images
-    
-    cv::imshow(sxymtitle, tdxdym);
+    template_image = imread(spath, IMREAD_GRAYSCALE);
+    BGHMatcher::init_ghough_table_from_img(
+        template_image, rtable, { ksize, BGHMatcher::BLUR_GAUSS, 1.0, rinfo.mag_thr });
+    std::cout << "Loaded template (size= " << ksize << "): ";
+    std::cout << rinfo.sname << " " << rtable.total_votes << std::endl;
 }
 
 
@@ -275,14 +275,10 @@ void loop(void)
 
         // create the "binary gradient" image for blurred image
         // and apply mask for pixels at strong gradients
+        // then apply Generalized Hough transform and locate maximum (best match)
         BGHMatcher::cmp8NeighborsGT<uint8_t>(img_blur, img_bgrad);
-        if (theGHData.params.mag_thr < 1.0)
-        {
-            BGHMatcher::apply_sobel_gradient_mask(img_gray, img_bgrad, kblur, theGHData.params.mag_thr / 2);
-        }
-
-        // apply Generalized Hough transform and locate maximum (best match)
-        BGHMatcher::apply_ghough_transform<CV_16U, uint16_t>(img_bgrad, img_match, theGHData);
+        BGHMatcher::apply_sobel_gradient_mask(img_gray, img_bgrad, kblur, theGHData.params.mag_thr / 2);
+        BGHMatcher::apply_ghough_transform_allpix<CV_16U, uint16_t>(img_bgrad, img_match, theGHData);
         minMaxLoc(img_match, nullptr, &qmax, nullptr, &ptmax);
 
         // apply the current output mode

@@ -67,26 +67,31 @@ namespace BGHMatcher
         const int kblur,
         const double mag_thr)
     {
-        double qmax;
-        cv::Mat temp_dx;
-        cv::Mat temp_dy;
-        cv::Mat temp_mag;
-        cv::Mat temp_a;
-        cv::Mat temp_mask;
-        const int SOBEL_DEPTH = CV_32F;
+        // proceed if threshold is in range 0-1
+        // 0 will not mask out any pixels, 1 will mask out all pixels
+        if ((mag_thr >= 0.0) && (mag_thr < 1.0))
+        {
+            double qmax;
+            cv::Mat temp_dx;
+            cv::Mat temp_dy;
+            cv::Mat temp_mag;
+            cv::Mat temp_a;
+            cv::Mat temp_mask;
+            const int SOBEL_DEPTH = CV_32F;
 
-        // calculate X and Y gradients for input image
-        cv::Sobel(rimg, temp_dx, SOBEL_DEPTH, 1, 0, kblur);
-        cv::Sobel(rimg, temp_dy, SOBEL_DEPTH, 0, 1, kblur);
+            // calculate X and Y gradients for input image
+            cv::Sobel(rimg, temp_dx, SOBEL_DEPTH, 1, 0, kblur);
+            cv::Sobel(rimg, temp_dy, SOBEL_DEPTH, 0, 1, kblur);
 
-        // create gradient magnitude mask
-        // everything above a fraction of the max will be kept
-        cv::cartToPolar(temp_dx, temp_dy, temp_mag, temp_a);
-        cv::minMaxLoc(temp_mag, nullptr, &qmax);
-        temp_mask = (temp_mag > (qmax * mag_thr));
+            // create gradient magnitude mask
+            // everything above a fraction of the max will be kept
+            cv::cartToPolar(temp_dx, temp_dy, temp_mag, temp_a);
+            cv::minMaxLoc(temp_mag, nullptr, &qmax);
+            temp_mask = (temp_mag > (qmax * mag_thr));
 
-        // apply mask to image to be modified
-        rmod = temp_mask & rmod;
+            // apply mask to image to be modified
+            rmod = temp_mask & rmod;
+        }
     }
 
 
@@ -198,16 +203,11 @@ namespace BGHMatcher
         blur_img(rimg, img_target, rparams.kblur, rparams.blur_type);
 
         // create binary gradient image from blurred target image
+        // and apply magnitude threshold mask to binary gradient image
         BGHMatcher::cmp8NeighborsGT<uint8_t>(img_target, img_bgrad);
+        apply_sobel_gradient_mask(rimg, img_bgrad, rparams.kblur, rparams.mag_thr);
 
-        // apply optional magnitude threshold mask to binary gradient image
-        // a threshold >= 1.0 means 100% of points are used and no masking is done
-        if ((rparams.mag_thr > 0.0) && (rparams.mag_thr < 1.0))
-        {
-            apply_sobel_gradient_mask(rimg, img_bgrad, rparams.kblur, rparams.mag_thr);
-        }
-
-        // create Generalized Hough lookup table from binary gradient image
+        // create Generalized Hough lookup table from masked binary gradient image
         BGHMatcher::create_ghough_table(img_bgrad, flags, rparams.scale, rtable);
 #if 0
         imshow("BG", img_bgrad);
