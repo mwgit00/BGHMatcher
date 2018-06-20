@@ -25,8 +25,6 @@
 #include <set>
 #include "BGHMatcher.h"
 #include "opencv2/highgui.hpp"
-#include <iostream>
-
 
 
 namespace BGHMatcher
@@ -40,27 +38,6 @@ namespace BGHMatcher
     };
 
     
-    void blur_img(cv::Mat& rsrc, cv::Mat& rdst, const int kblur, const int blur_type)
-    {
-        // it may not make much difference
-        // but the border type can be changed here
-        const int kborder = cv::BORDER_DEFAULT;
-        switch (blur_type)
-        {
-        case BGHMatcher::BLUR_GAUSS:
-            GaussianBlur(rsrc, rdst, { kblur, kblur }, 0, 0, kborder);
-            break;
-        case BGHMatcher::BLUR_MEDIAN:
-            medianBlur(rsrc, rdst, kblur);
-            break;
-        case BGHMatcher::BLUR_BOX:
-        default:
-            blur(rsrc, rdst, { kblur, kblur }, { -1, -1 }, kborder);
-            break;
-        }
-    }
-
-
     void apply_sobel_gradient_mask(
         const cv::Mat& rimg,
         cv::Mat& rmod,
@@ -200,15 +177,16 @@ namespace BGHMatcher
 
         // create pre-blurred version of target image
         // same blur should be applied to input image when looking for matches
-        blur_img(rimg, img_target, rparams.kblur, rparams.blur_type);
+        GaussianBlur(rimg, img_target, { rparams.kblur, rparams.kblur }, 0);
 
         // create binary gradient image from blurred target image
         // and apply magnitude threshold mask to binary gradient image
         BGHMatcher::cmp8NeighborsGT<uint8_t>(img_target, img_bgrad);
-        apply_sobel_gradient_mask(rimg, img_bgrad, rparams.kblur, rparams.mag_thr);
+        apply_sobel_gradient_mask(rimg, img_bgrad, rparams.ksobel, rparams.mag_thr);
 
         // create Generalized Hough lookup table from masked binary gradient image
         BGHMatcher::create_ghough_table(img_bgrad, flags, rparams.scale, rtable);
+
 #if 0
         imshow("BG", img_bgrad);
 #endif

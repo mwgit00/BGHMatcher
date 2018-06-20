@@ -53,16 +53,16 @@ using namespace cv;
 
 Mat template_image;
 const char * stitle = "BGHMatcher";
+const double default_mag_thr = 0.1;
 int n_record_ctr = 0;
 size_t nfile = 0;
 
 const std::vector<T_file_info> vfiles =
 {
-    { 0.10, "circle_b_on_w.png"},
-    { 0.20, "bottle_20perc_top_b_on_w.png"},
-    { 0.10, "outlet_cover.png"},
-    { 0.20, "panda_face.png"},
-    { 0.05, "stars_main.png"}
+    { default_mag_thr, "circle_b_on_w.png"},
+    { default_mag_thr, "bottle_20perc_top_b_on_w.png"},
+    { default_mag_thr, "panda_face.png"},
+    { default_mag_thr, "stars_main.png"}
 };
 
 
@@ -106,14 +106,6 @@ void image_output(
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(2) << (qmax / rtable.total_votes);
 
-    // draw black background box then draw text score on top of it
-    rectangle(rimg, { corner.x,corner.y - h_score, 40, h_score }, SCA_BLACK, -1);
-    putText(rimg, oss.str(), { corner.x,corner.y - 4}, FONT_HERSHEY_PLAIN, 1.0, SCA_WHITE, 1);
-
-    // draw rectangle around best match with yellow dot at center
-    rectangle(rimg, { corner.x, corner.y, rsz.width, rsz.height }, SCA_GREEN, 2);
-    circle(rimg, rptmax, 2, SCA_YELLOW, -1);
-
     // draw current template in upper right corner with blue box around it
     Mat bgr_template_img;
     cvtColor(template_image, bgr_template_img, COLOR_GRAY2BGR);
@@ -136,17 +128,29 @@ void image_output(
 
     rectangle(rimg, { osz.width - tsz.width, 0 }, { osz.width, tsz.height }, box_color, 2);
 
+    // draw black background box then draw text score on top of it
+    rectangle(rimg, { corner.x,corner.y - h_score, 40, h_score }, SCA_BLACK, -1);
+    putText(rimg, oss.str(), { corner.x,corner.y - 4 }, FONT_HERSHEY_PLAIN, 1.0, SCA_WHITE, 1);
+
+    // draw rectangle around best match with yellow dot at center
+    rectangle(rimg, { corner.x, corner.y, rsz.width, rsz.height }, SCA_GREEN, 2);
+    circle(rimg, rptmax, 2, SCA_YELLOW, -1);
+
     cv::imshow(stitle, rimg);
 }
 
 
-void reload_template(BGHMatcher::T_ghough_table& rtable, const T_file_info& rinfo, const int ksize)
+void reload_template(
+    BGHMatcher::T_ghough_table& rtable,
+    const T_file_info& rinfo,
+    const int kblur,
+    const int ksobel)
 {
     std::string spath = DATA_PATH + rinfo.sname;
     template_image = imread(spath, IMREAD_GRAYSCALE);
     BGHMatcher::init_ghough_table_from_img(
-        template_image, rtable, { ksize, BGHMatcher::BLUR_GAUSS, 1.0, rinfo.mag_thr });
-    std::cout << "Loaded template (size= " << ksize << "): ";
+        template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr });
+    std::cout << "Loaded template (blur,sobel) = " << kblur << "," << ksobel << "): ";
     std::cout << rinfo.sname << " " << rtable.total_votes << std::endl;
 }
 
@@ -190,13 +194,16 @@ void loop(void)
     theKnobs.handle_keypress('0');
 
     // initialize lookup table
-    reload_template(theGHData, vfiles[nfile], theKnobs.get_ksize());
+    reload_template(theGHData, vfiles[nfile], theKnobs.get_pre_blur(), theKnobs.get_ksize());
 
     // and the image processing loop is running...
     bool is_running = true;
 
     while (is_running)
     {
+        int kblur = theKnobs.get_pre_blur();
+        int ksobel = theKnobs.get_ksize();
+
         // check for any operations that
         // might halt or reset the image processing loop
         if (theKnobs.get_op_flag(op_id))
@@ -204,12 +211,13 @@ void loop(void)
             if (op_id == Knobs::OP_TEMPLATE || op_id == Knobs::OP_KSIZE)
             {
                 // changing the template or template kernel size requires a reload
+                // the current pre-blur setting is also applied to create the new data
                 // changing the template will advance the file index
                 if (op_id == Knobs::OP_TEMPLATE)
                 {
                     nfile = (nfile + 1) % vfiles.size();
                 }
-                reload_template(theGHData, vfiles[nfile], theKnobs.get_ksize());
+                reload_template(theGHData, vfiles[nfile], kblur, ksobel);
             }
             else if (op_id == Knobs::OP_RECORD)
             {
@@ -270,14 +278,13 @@ void loop(void)
         }
 
         // apply the current blur setting
-        int kblur = theKnobs.get_pre_blur();
-        BGHMatcher::blur_img(img_gray, img_blur, kblur, BGHMatcher::BLUR_GAUSS);
+        GaussianBlur(img_gray, img_blur, { kblur, kblur }, 0);
 
         // create the "binary gradient" image for blurred image
         // and apply mask for pixels at strong gradients
         // then apply Generalized Hough transform and locate maximum (best match)
         BGHMatcher::cmp8NeighborsGT<uint8_t>(img_blur, img_bgrad);
-        BGHMatcher::apply_sobel_gradient_mask(img_gray, img_bgrad, kblur, theGHData.params.mag_thr / 2);
+        BGHMatcher::apply_sobel_gradient_mask(img_gray, img_bgrad, theGHData.params.ksobel, theGHData.params.mag_thr);
         BGHMatcher::apply_ghough_transform_allpix<CV_16U, uint16_t>(img_bgrad, img_match, theGHData);
         minMaxLoc(img_match, nullptr, &qmax, nullptr, &ptmax);
 

@@ -35,20 +35,16 @@
 
 namespace BGHMatcher
 {
-    enum
-    {
-        BLUR_BOX,
-        BLUR_GAUSS,
-        BLUR_MEDIAN,
-    };
-
     // Masks for selecting number of adjacent bits to consider.
-    // Using combinations of 4 or 5 adjacent pixels seems to be best choice.
+    // Using 4 adjacent bits seems to be best default choice.
     enum
     {
-        N8_4ADJ = (1 << 3), // consider 4 adjacent pixels (usually best choice)
-        N8_5ADJ = (1 << 4), // consider 5 adjacent pixels
-        N8_4OR5 = (3 << 3), // consider 4 or 5 adjacent pixels
+        N8_3ADJ = (1 << 2), // consider 3 adjacent bits (might help or hurt)
+        N8_4ADJ = (1 << 3), // consider 4 adjacent bits (usually best choice by itself)
+        N8_5ADJ = (1 << 4), // consider 5 adjacent bits (might help or hurt)
+        N8_3OR4 = (3 << 2), // consider 3 and 4 adjacent bits
+        N8_4OR5 = (3 << 3), // consider 4 and 5 adjacent bits
+        N8_345 =  (7 << 2), // consider 3, 4, and 5 adjacent bits
     };
     
 
@@ -66,12 +62,12 @@ namespace BGHMatcher
     typedef struct _T_ghough_params_struct
     {
         int kblur;
-        int blur_type;
+        int ksobel;
         double scale;
         double mag_thr;
-        _T_ghough_params_struct() : kblur(7), blur_type(BLUR_GAUSS), scale(1.0), mag_thr(1.0) {}
-        _T_ghough_params_struct(const int i, const int j, const double s, const double t) :
-            kblur(i), blur_type(j), scale(s), mag_thr(t) {}
+        _T_ghough_params_struct() : kblur(7), ksobel(7), scale(1.0), mag_thr(1.0) {}
+        _T_ghough_params_struct(const int kb, const int ks, const double s, const double t) :
+            kblur(kb), ksobel(ks), scale(s), mag_thr(t) {}
     } T_ghough_params;
     
     
@@ -143,69 +139,20 @@ namespace BGHMatcher
 
             // iterate along row
             // new output pixel value is the "greater than" mask for its 8-neighbors
-            // increment pointers for the next 8-neighbors
+            // increment pointers to move to the next 8-neighbors
             for (int j = 1; j < rsrc.cols - 1; j++)
             {
                 T q = *(pixs00++);
-                int b =
-                    ((*(pixs0p++) > q)) |
-                    ((*(pixspp++) > q) << 1) |
-                    ((*(pixsp0++) > q) << 2) |
-                    ((*(pixspn++) > q) << 3) |
-                    ((*(pixs0n++) > q) << 4) |
-                    ((*(pixsnn++) > q) << 5) |
-                    ((*(pixsn0++) > q) << 6) |
-                    ((*(pixsnp++) > q) << 7);
-                *(pixd++) = static_cast<uint8_t>(b);
-            }
-        }
-    }
-
-
-    // This produces a "binary gradient" image with features for Generalized Hough transform.
-    // Input image is grayscale.  Template parameter specifies input pixel type, usually uint8_t.
-    // Compares a central pixel with its 8-neighbors and sets bits if central pixel is larger.
-    // An output pixel with a value of 255 is less than all of its 8-neighbors.
-    // Output image is CV_8U type with same size as input image.  Border pixels are 0.
-    template<typename T>
-    void cmp8NeighborsLT(const cv::Mat& rsrc, cv::Mat& rdst)
-    {
-        // output is always 8-bit unsigned
-        rdst = cv::Mat::zeros(rsrc.size(), CV_8U);
-        for (int i = 1; i < rsrc.rows - 1; i++)
-        {
-            // initialize pointers to central pixel's 8-neighbors
-            const T * pixsnn = rsrc.ptr<T>(i - 1);
-            const T * pixs0n = rsrc.ptr<T>(i + 0);
-            const T * pixspn = rsrc.ptr<T>(i + 1);
-
-            const T * pixsn0 = pixsnn + 1;
-            const T * pixs00 = pixs0n + 1;
-            const T * pixsp0 = pixspn + 1;
-
-            const T * pixsnp = pixsn0 + 1;
-            const T * pixs0p = pixs00 + 1;
-            const T * pixspp = pixsp0 + 1;
-
-            // initialize pointer to output pixel
-            uint8_t * pixd = rdst.ptr<T>(i) + 1;
-
-            // iterate along row
-            // new output pixel value is the "less than" mask for its 8-neighbors
-            // increment pointers for the next 8-neighbors
-            for (int j = 1; j < rsrc.cols - 1; j++)
-            {
-                T q = *(pixs00++);
-                int b =
-                    ((*(pixs0p++) < q)) |
-                    ((*(pixspp++) < q) << 1) |
-                    ((*(pixsp0++) < q) << 2) |
-                    ((*(pixspn++) < q) << 3) |
-                    ((*(pixs0n++) < q) << 4) |
-                    ((*(pixsnn++) < q) << 5) |
-                    ((*(pixsn0++) < q) << 6) |
-                    ((*(pixsnp++) < q) << 7);
-                *(pixd++) = static_cast<uint8_t>(b);
+                uint8_t bg =
+                    ((q > *(pixs0p++))     ) |
+                    ((q > *(pixspp++)) << 1) |
+                    ((q > *(pixsp0++)) << 2) |
+                    ((q > *(pixspn++)) << 3) |
+                    ((q > *(pixs0n++)) << 4) |
+                    ((q > *(pixsnn++)) << 5) |
+                    ((q > *(pixsn0++)) << 6) |
+                    ((q > *(pixsnp++)) << 7);
+                *(pixd++) = bg;
             }
         }
     }
@@ -295,15 +242,6 @@ namespace BGHMatcher
         const double mag_thr);
 
     
-    // Make new blurred image using specified kernel size and blurring type.
-    // Blurring operation can be done in-place.
-    void blur_img(
-        cv::Mat& rsrc,
-        cv::Mat& rdst,
-        const int kblur,
-        const int blur_type);
-
-
     // Creates a set with all 8-bit values that have the specified number(s) of adjacent bits.
     // The bits in the mask specify the number of adjacent bits to consider.
     // Default argument is for using 4 adjacent bits which seems like best starting point.
