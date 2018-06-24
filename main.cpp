@@ -99,8 +99,14 @@ void image_output(
     BGHMatcher::T_ghough_table& rtable)
 {
     const int h_score = 16;
-    const Size& rsz = rtable.sz;
-    const Point corner = { rptmax.x - rsz.width / 2, rptmax.y - rsz.height / 2 };
+    const double scale = rtable.params.scale;
+
+    // determine size of "target" box
+    // it will vary depending on the scale parameter
+    Size rsz = rtable.sz;
+    rsz.height *= scale;
+    rsz.width *= scale;
+    Point corner = { rptmax.x - rsz.width / 2, rptmax.y - rsz.height / 2 };
 
     // format score string for viewer (#.##)
     std::ostringstream oss;
@@ -115,7 +121,7 @@ void image_output(
     bgr_template_img.copyTo(rimg(roi));
 
     // save each frame to a file if recording
-    // and use magenta box around template image
+    // and use magenta box around template image to indicate recording mode is active
     cv::Scalar box_color = SCA_BLUE;
     if (rknobs.get_record_enabled())
     {
@@ -148,8 +154,18 @@ void reload_template(
 {
     std::string spath = DATA_PATH + rinfo.sname;
     template_image = imread(spath, IMREAD_GRAYSCALE);
-    BGHMatcher::init_ghough_table_from_img(
-        template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr });
+#if 1
+    BGHMatcher::init_binary_ghough_table_from_img(
+        template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr, 8.0 });
+#else
+#if 0
+    BGHMatcher::init_hybrid_ghough_table_from_img(
+        template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr, 8.0 });
+#else
+    BGHMatcher::init_classic_ghough_table_from_img(
+        template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr, 12.0 });
+#endif
+#endif
     std::cout << "Loaded template (blur,sobel) = " << kblur << "," << ksobel << "): ";
     std::cout << rinfo.sname << " " << rtable.total_votes << std::endl;
 }
@@ -283,8 +299,17 @@ void loop(void)
         // create the "binary gradient" image for blurred image
         // and apply mask for pixels at strong gradients
         // then apply Generalized Hough transform and locate maximum (best match)
-        BGHMatcher::cmp8NeighborsGT<uint8_t>(img_blur, img_bgrad);
+#if 1
+        int krng = static_cast<int>(theGHData.params.mag_thr * BGHMatcher::RNG_FAC);
+        BGHMatcher::cmp8NeighborsGTRng<uint8_t>(img_blur, img_bgrad, krng);
+#else
+#if 0
+        BGHMatcher::cmp8NeighborsGTRng<uint8_t>(img_blur, img_bgrad);
         BGHMatcher::apply_sobel_gradient_mask(img_gray, img_bgrad, theGHData.params.ksobel, theGHData.params.mag_thr);
+#else
+        BGHMatcher::create_masked_gradient_orientation_img(img_gray, img_bgrad, theGHData.params);
+#endif
+#endif
         BGHMatcher::apply_ghough_transform_allpix<CV_16U, uint16_t>(img_bgrad, img_match, theGHData);
         minMaxLoc(img_match, nullptr, &qmax, nullptr, &ptmax);
 
@@ -294,7 +319,7 @@ void loop(void)
         {
             case Knobs::OUT_RAW:
             {
-                // show the raw template match result
+                // show the raw match result
                 Mat temp_8U;
                 normalize(img_match, img_match, 0, 255, cv::NORM_MINMAX);
                 img_match.convertTo(temp_8U, CV_8U);

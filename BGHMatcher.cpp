@@ -37,7 +37,29 @@ namespace BGHMatcher
         }
     };
 
-    
+
+    void create_adjacent_bits_set(
+        BGHMatcher::T_256_flags& rflags,
+        const uint8_t mask)
+    {
+        for (int i = 0; i < 8; i++)
+        {
+            if (mask & (1 << i))
+            {
+                uint8_t num_bits_in_mask = i + 1;
+                uint8_t bit_mask = (1 << num_bits_in_mask) - 1;
+                for (int j = 0; j < 8; j++)
+                {
+                    uint8_t rot_bit_mask_L = (bit_mask << j);
+                    uint8_t rot_bit_mask_R = (bit_mask >> (8 - j));
+                    uint8_t rot_bit_mask = rot_bit_mask_L | rot_bit_mask_R;
+                    rflags.set(rot_bit_mask);
+                }
+            }
+        }
+    }
+
+
     void apply_sobel_gradient_mask(
         const cv::Mat& rimg,
         cv::Mat& rmod,
@@ -72,28 +94,6 @@ namespace BGHMatcher
     }
 
 
-    void create_adjacent_bits_set(
-        BGHMatcher::T_256_flags& rflags,
-        const uint8_t mask)
-    {
-        for (int i = 0; i < 8; i++)
-        {
-            if (mask & (1 << i))
-            {
-                uint8_t num_bits_in_mask = i + 1;
-                uint8_t bit_mask = (1 << num_bits_in_mask) - 1;
-                for (int j = 0; j < 8; j++)
-                {
-                    uint8_t rot_bit_mask_L = (bit_mask << j);
-                    uint8_t rot_bit_mask_R = (bit_mask >> (8 - j));
-                    uint8_t rot_bit_mask = rot_bit_mask_L | rot_bit_mask_R;
-                    rflags.set(rot_bit_mask);
-                }
-            }
-        }
-    }
-
-
     void create_ghough_table(
         const cv::Mat& rbgrad,
         const BGHMatcher::T_256_flags& rflags,
@@ -109,7 +109,7 @@ namespace BGHMatcher
         int row_offset = rbgrad.rows / 2;
         int col_offset = rbgrad.cols / 2;
 
-        // iterate through the binary gradient image pixel-by-pixel
+        // iterate through the gradient image pixel-by-pixel
         // use STL structures to build a lookup table dynamically
         std::map<uint8_t, std::map<cv::Point, uint16_t, cmpCvPoint>> lookup_table;
         for (int i = 0; i < rbgrad.rows; i++)
@@ -117,7 +117,7 @@ namespace BGHMatcher
             const uint8_t * pix = rbgrad.ptr<uint8_t>(i);
             for (int j = 0; j < rbgrad.cols; j++)
             {
-                // get the "binary gradient" pixel value (key)
+                // get the gradient pixel value (key)
                 const uint8_t uu = pix[j];
                 if (rflags.get(uu))
                 {
@@ -156,7 +156,45 @@ namespace BGHMatcher
     }
 
     
-    void init_ghough_table_from_img(
+
+
+    void create_masked_gradient_orientation_img(
+        const cv::Mat& rimg,
+        cv::Mat& rmgo,
+        const BGHMatcher::T_ghough_params& rparams)
+    {
+        double qmax;
+        double qmin;
+        double ang_step = rparams.ang_step;
+        cv::Mat temp_dx;
+        cv::Mat temp_dy;
+        cv::Mat temp_mag;
+        cv::Mat temp_ang;
+        cv::Mat temp_mask;
+        const int SOBEL_DEPTH = CV_32F;
+
+        // calculate X and Y gradients for input image
+        cv::Sobel(rimg, temp_dx, SOBEL_DEPTH, 1, 0, rparams.ksobel);
+        cv::Sobel(rimg, temp_dy, SOBEL_DEPTH, 0, 1, rparams.ksobel);
+
+        // convert X-Y gradients to magnitude and angle
+        cartToPolar(temp_dx, temp_dy, temp_mag, temp_ang);
+
+        // create mask for pixels that exceed gradient magnitude threshold
+        minMaxLoc(temp_mag, nullptr, &qmax);
+        temp_mask = (temp_mag > (qmax * rparams.mag_thr));
+
+        // scale, offset, and convert the angle image so 0-2pi becomes integers 1 to (ANG_STEP+1)
+        ang_step = (ang_step > ANG_STEP_MAX) ? ANG_STEP_MAX : ang_step;
+        ang_step = (ang_step < ANG_STEP_MIN) ? ANG_STEP_MIN: ang_step;
+        temp_ang.convertTo(rmgo, CV_8U, ang_step / (CV_2PI), 2.0);
+
+        // apply mask to eliminate pixels
+        rmgo &= temp_mask;
+    }
+
+
+    void init_binary_ghough_table_from_img(
         cv::Mat& rimg,
         BGHMatcher::T_ghough_table& rtable,
         const BGHMatcher::T_ghough_params& rparams)
@@ -179,19 +217,94 @@ namespace BGHMatcher
         // same blur should be applied to input image when looking for matches
         GaussianBlur(rimg, img_target, { rparams.kblur, rparams.kblur }, 0);
 
-        // create binary gradient image from blurred target image
-        // and apply magnitude threshold mask to binary gradient image
-        BGHMatcher::cmp8NeighborsGT<uint8_t>(img_target, img_bgrad);
-        apply_sobel_gradient_mask(rimg, img_bgrad, rparams.ksobel, rparams.mag_thr);
+        // create encoded gradient image from blurred target image
+        int krng = static_cast<int>(rparams.mag_thr * RNG_FAC);
+        BGHMatcher::cmp8NeighborsGTRng<uint8_t>(img_target, img_bgrad, krng);
 
         // create Generalized Hough lookup table from masked binary gradient image
         BGHMatcher::create_ghough_table(img_bgrad, flags, rparams.scale, rtable);
 
-#if 0
+#if 1
         imshow("BG", img_bgrad);
 #endif
 
         // save metadata for lookup table
         rtable.params = rparams;
     }
+
+
+
+    void init_hybrid_ghough_table_from_img(
+        cv::Mat& rimg,
+        BGHMatcher::T_ghough_table& rtable,
+        const BGHMatcher::T_ghough_params& rparams)
+    {
+        cv::Mat img_bgrad;
+        cv::Mat img_target;
+        cv::Mat temp_mask;
+
+        BGHMatcher::T_256_flags flags;
+
+#if 0
+        BGHMatcher::create_adjacent_bits_set(flags, BGHMatcher::N8_4ADJ);
+#else
+        // test for using every binary gradient pattern except 0
+        flags.set_all();
+        flags.clr(0);
+#endif
+
+        // create pre-blurred version of target image
+        // same blur should be applied to input image when looking for matches
+        GaussianBlur(rimg, img_target, { rparams.kblur, rparams.kblur }, 0);
+
+        // create binary gradient image from blurred target image
+        // and apply magnitude threshold mask to binary gradient image
+        BGHMatcher::cmp8NeighborsGTRng<uint8_t>(img_target, img_bgrad);
+        apply_sobel_gradient_mask(rimg, img_bgrad, rparams.ksobel, rparams.mag_thr);
+
+        // create Generalized Hough lookup table from masked binary gradient image
+        BGHMatcher::create_ghough_table(img_bgrad, flags, rparams.scale, rtable);
+
+#if 1
+        imshow("HG", img_bgrad);
+#endif
+
+        // save metadata for lookup table
+        rtable.params = rparams;
+    }
+
+
+    void init_classic_ghough_table_from_img(
+        cv::Mat& rimg,
+        BGHMatcher::T_ghough_table& rtable,
+        const BGHMatcher::T_ghough_params& rparams)
+    {
+        cv::Mat img_cgrad;
+        create_masked_gradient_orientation_img(rimg, img_cgrad, rparams);
+
+        cv::Mat img_target;
+        GaussianBlur(rimg, img_target, { rparams.kblur, rparams.kblur }, 0);
+        cv::Mat img_xxx;
+        BGHMatcher::cmp8NeighborsGTRng<uint8_t>(img_target, img_xxx, 10);
+
+        BGHMatcher::T_256_flags flags;
+        flags.set_all();
+        flags.clr(0);
+        
+        // create Generalized Hough lookup table from masked classic gradient image
+        BGHMatcher::create_ghough_table(img_cgrad, flags, rparams.scale, rtable);
+
+#if 1
+        cv::Mat img_display;
+        normalize(img_cgrad, img_display, 0, 255, cv::NORM_MINMAX);
+        imshow("CG", img_display);
+        cv::Mat aaa;
+        normalize(img_xxx, aaa, 0, 255, cv::NORM_MINMAX);
+        imshow("wonk", aaa);
+#endif
+
+        // save metadata for lookup table
+        rtable.params = rparams;
+    }
+
 }
