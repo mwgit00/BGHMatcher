@@ -115,15 +115,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\TOGMatcher\Knobs.cpp" />
     <ClCompile Include="..\TOGMatcher\util.cpp" />
     <ClCompile Include="BGHMatcher.cpp" />
+    <ClCompile Include="Knobs.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\TOGMatcher\Knobs.h" />
     <ClInclude Include="..\TOGMatcher\util.h" />
     <ClInclude Include="BGHMatcher.h" />
+    <ClInclude Include="Knobs.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -24,7 +24,7 @@
     <ClCompile Include="..\TOGMatcher\util.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\TOGMatcher\Knobs.cpp">
+    <ClCompile Include="Knobs.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -32,10 +32,10 @@
     <ClInclude Include="BGHMatcher.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\TOGMatcher\Knobs.h">
+    <ClInclude Include="..\TOGMatcher\util.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\TOGMatcher\util.h">
+    <ClInclude Include="Knobs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

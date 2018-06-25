@@ -37,7 +37,7 @@ namespace BGHMatcher
 {
     constexpr double ANG_STEP_MAX = 254.0;
     constexpr double ANG_STEP_MIN = 4.0;
-    constexpr double RNG_FAC = 255.0;
+    constexpr double RNG_FAC = 127.0;       // fudge factor to make magnitude and range factors roughly the same
 
 
     // Masks for selecting number of adjacent bits to consider.
@@ -147,6 +147,7 @@ namespace BGHMatcher
             // iterate along row
             // if the max of the 3x3 neighborhood exceeds the min by a threshold
             // then the new output pixel value is the "greater than" mask for the 8-neighbors
+            // otherwise the output pixel will be set to 0
             for (int j = 1; j < rsrc.cols - 1; j++)
             {
                 T q = *(pixs00);
@@ -154,32 +155,33 @@ namespace BGHMatcher
                 T umax = q;
                 uint8_t bg = 0;
 
-                // if range threshold is not zero then find min-max of 3x3 neighborhood
-                if (rng > 0)
+                // if range threshold is not zero then find min-max of neighborhood
+                if (rng != 0)
                 {
-                    // determine maximum of center pixel and 8-neighbors
+                    // determine maximum of center pixel and its neighbors
                     umax = cv::max(umax, *(pixs0p));
-                    umax = cv::max(umax, *(pixspp));
                     umax = cv::max(umax, *(pixsp0));
-                    umax = cv::max(umax, *(pixspn));
                     umax = cv::max(umax, *(pixs0n));
-                    umax = cv::max(umax, *(pixsnn));
                     umax = cv::max(umax, *(pixsn0));
-                    umax = cv::max(umax, *(pixsnp));
-
-                    // determine minimum of center pixel and 8-neighbors
                     umin = cv::min(umin, *(pixs0p));
-                    umin = cv::min(umin, *(pixspp));
                     umin = cv::min(umin, *(pixsp0));
-                    umin = cv::min(umin, *(pixspn));
                     umin = cv::min(umin, *(pixs0n));
-                    umin = cv::min(umin, *(pixsnn));
                     umin = cv::min(umin, *(pixsn0));
+#ifdef USE_3X3_MIN_MAX
+                    // diagonal neighbors
+                    umax = cv::max(umax, *(pixspp));
+                    umax = cv::max(umax, *(pixspn));
+                    umax = cv::max(umax, *(pixsnn));
+                    umax = cv::max(umax, *(pixsnp));
+                    umin = cv::min(umin, *(pixspp));
+                    umin = cv::min(umin, *(pixspn));
+                    umin = cv::min(umin, *(pixsnn));
                     umin = cv::min(umin, *(pixsnp));
+#endif
                 }
 
-                // if max-min exceeds the threshold or is 0
-                // then do "greater-than" encoding for 8-neighbors
+                // if max-min exceeds threshold then do "greater-than" encoding for 8-neighbors
+                // this step will always be performed if threshold is 0
                 if ((umax - umin) >= rng)
                 {
                     bg =

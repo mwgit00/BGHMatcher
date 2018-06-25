@@ -20,6 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+#include "Windows.h"
 #include "opencv2/imgproc.hpp"
 #include "opencv2/imgcodecs.hpp"
 #include "opencv2/highgui.hpp"
@@ -147,25 +148,32 @@ void image_output(
 
 
 void reload_template(
+    const Knobs& rknobs,
     BGHMatcher::T_ghough_table& rtable,
-    const T_file_info& rinfo,
-    const int kblur,
-    const int ksobel)
+    const T_file_info& rinfo)
 {
+    int kblur = rknobs.get_pre_blur();
+    int ksobel = rknobs.get_ksize();
     std::string spath = DATA_PATH + rinfo.sname;
     template_image = imread(spath, IMREAD_GRAYSCALE);
-#if 1
-    BGHMatcher::init_binary_ghough_table_from_img(
-        template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr, 8.0 });
-#else
-#if 0
-    BGHMatcher::init_hybrid_ghough_table_from_img(
-        template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr, 8.0 });
-#else
-    BGHMatcher::init_classic_ghough_table_from_img(
-        template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr, 12.0 });
-#endif
-#endif
+    
+    switch (rknobs.get_gh_mode())
+    {
+    case Knobs::GH_BINARY:
+        BGHMatcher::init_binary_ghough_table_from_img(
+            template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr, 8.0 });
+        break;
+    case Knobs::GH_HYBRID:
+        BGHMatcher::init_hybrid_ghough_table_from_img(
+            template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr, 8.0 });
+        break;
+    case Knobs::GH_CLASSIC:
+    default:
+        BGHMatcher::init_classic_ghough_table_from_img(
+            template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr, 8.0 });
+        break;
+    }
+    
     std::cout << "Loaded template (blur,sobel) = " << kblur << "," << ksobel << "): ";
     std::cout << rinfo.sname << " " << rtable.total_votes << std::endl;
 }
@@ -191,6 +199,12 @@ void loop(void)
     BGHMatcher::T_ghough_table theGHData;
     Ptr<CLAHE> pCLAHE = createCLAHE();
 
+    LARGE_INTEGER lix0;
+    LARGE_INTEGER lix1;
+    LARGE_INTEGER lixf;
+    LARGE_INTEGER ElapsedMicroseconds;
+    QueryPerformanceFrequency(&lixf);
+
     // need a 0 as argument
     VideoCapture vcap(0);
     if (!vcap.isOpened())
@@ -210,7 +224,7 @@ void loop(void)
     theKnobs.handle_keypress('0');
 
     // initialize lookup table
-    reload_template(theGHData, vfiles[nfile], theKnobs.get_pre_blur(), theKnobs.get_ksize());
+    reload_template(theKnobs, theGHData, vfiles[nfile]);
 
     // and the image processing loop is running...
     bool is_running = true;
@@ -224,16 +238,14 @@ void loop(void)
         // might halt or reset the image processing loop
         if (theKnobs.get_op_flag(op_id))
         {
-            if (op_id == Knobs::OP_TEMPLATE || op_id == Knobs::OP_KSIZE)
+            if (op_id == Knobs::OP_TEMPLATE || op_id == Knobs::OP_UPDATE)
             {
-                // changing the template or template kernel size requires a reload
-                // the current pre-blur setting is also applied to create the new data
                 // changing the template will advance the file index
                 if (op_id == Knobs::OP_TEMPLATE)
                 {
                     nfile = (nfile + 1) % vfiles.size();
                 }
-                reload_template(theGHData, vfiles[nfile], kblur, ksobel);
+                reload_template(theKnobs, theGHData, vfiles[nfile]);
             }
             else if (op_id == Knobs::OP_RECORD)
             {
@@ -296,21 +308,46 @@ void loop(void)
         // apply the current blur setting
         GaussianBlur(img_gray, img_blur, { kblur, kblur }, 0);
 
-        // create the "binary gradient" image for blurred image
-        // and apply mask for pixels at strong gradients
+        QueryPerformanceCounter(&lix0);
+
+        switch (theKnobs.get_gh_mode())
+        {
+            case Knobs::GH_BINARY:
+            {
+                // create the "binary gradient" image from blurred input image
+                // use max-min threshold to mask pixels at strong gradients
+                int krng = static_cast<int>(theGHData.params.mag_thr * BGHMatcher::RNG_FAC);
+                BGHMatcher::cmp8NeighborsGTRng<uint8_t>(img_blur, img_bgrad, krng);
+                break;
+            }
+            case Knobs::GH_HYBRID:
+            {
+                // create the "binary gradient" image from blurred input image
+                // use Sobel gradient magnitude to mask pixels at strong gradients
+                BGHMatcher::cmp8NeighborsGTRng<uint8_t>(img_blur, img_bgrad);
+                BGHMatcher::apply_sobel_gradient_mask(img_gray, img_bgrad, theGHData.params.ksobel, theGHData.params.mag_thr);
+                break;
+            }
+            case Knobs::GH_CLASSIC:
+            default:
+            {
+                // create image of encoded Sobel gradient orientations from blurred input image
+                BGHMatcher::create_masked_gradient_orientation_img(img_gray, img_bgrad, theGHData.params);
+                break;
+            }
+        }
+
         // then apply Generalized Hough transform and locate maximum (best match)
-#if 1
-        int krng = static_cast<int>(theGHData.params.mag_thr * BGHMatcher::RNG_FAC);
-        BGHMatcher::cmp8NeighborsGTRng<uint8_t>(img_blur, img_bgrad, krng);
-#else
-#if 0
-        BGHMatcher::cmp8NeighborsGTRng<uint8_t>(img_blur, img_bgrad);
-        BGHMatcher::apply_sobel_gradient_mask(img_gray, img_bgrad, theGHData.params.ksobel, theGHData.params.mag_thr);
-#else
-        BGHMatcher::create_masked_gradient_orientation_img(img_gray, img_bgrad, theGHData.params);
-#endif
-#endif
         BGHMatcher::apply_ghough_transform_allpix<CV_16U, uint16_t>(img_bgrad, img_match, theGHData);
+
+        // calculate time for one GH calculation
+        QueryPerformanceCounter(&lix1);
+        ElapsedMicroseconds.QuadPart = lix1.QuadPart - lix0.QuadPart;
+        ElapsedMicroseconds.QuadPart *= 1000000;
+        ElapsedMicroseconds.QuadPart /= lixf.QuadPart;
+
+        //std::cout << ElapsedMicroseconds.QuadPart << std::endl;
+
         minMaxLoc(img_match, nullptr, &qmax, nullptr, &ptmax);
 
         // apply the current output mode
@@ -332,6 +369,10 @@ void loop(void)
                 // show red overlay of any matches that exceed arbitrary threshold
                 Mat match_mask;
                 std::vector<std::vector<cv::Point>> contours;
+                //if (theKnobs.get_gh_mode() == Knobs::GH_CLASSIC)
+                {
+                    normalize(img_bgrad, img_bgrad, 0, 255, cv::NORM_MINMAX);
+                }
                 cvtColor(img_bgrad, img_viewer, COLOR_GRAY2BGR);
                 normalize(img_match, img_match, 0, 1, cv::NORM_MINMAX);
                 match_mask = (img_match > MATCH_DISPLAY_THRESHOLD);

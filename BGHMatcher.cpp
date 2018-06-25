@@ -225,7 +225,7 @@ namespace BGHMatcher
         BGHMatcher::create_ghough_table(img_bgrad, flags, rparams.scale, rtable);
 
 #if 1
-        imshow("BG", img_bgrad);
+        imshow("GHTemplate", img_bgrad);
 #endif
 
         // save metadata for lookup table
@@ -266,7 +266,7 @@ namespace BGHMatcher
         BGHMatcher::create_ghough_table(img_bgrad, flags, rparams.scale, rtable);
 
 #if 1
-        imshow("HG", img_bgrad);
+        imshow("GHTemplate", img_bgrad);
 #endif
 
         // save metadata for lookup table
@@ -284,8 +284,6 @@ namespace BGHMatcher
 
         cv::Mat img_target;
         GaussianBlur(rimg, img_target, { rparams.kblur, rparams.kblur }, 0);
-        cv::Mat img_xxx;
-        BGHMatcher::cmp8NeighborsGTRng<uint8_t>(img_target, img_xxx, 10);
 
         BGHMatcher::T_256_flags flags;
         flags.set_all();
@@ -297,10 +295,7 @@ namespace BGHMatcher
 #if 1
         cv::Mat img_display;
         normalize(img_cgrad, img_display, 0, 255, cv::NORM_MINMAX);
-        imshow("CG", img_display);
-        cv::Mat aaa;
-        normalize(img_xxx, aaa, 0, 255, cv::NORM_MINMAX);
-        imshow("wonk", aaa);
+        imshow("GHTemplate", img_display);
 #endif
 
         // save metadata for lookup table
