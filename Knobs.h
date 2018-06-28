@@ -36,13 +36,6 @@ public:
 
     enum
     {
-        GH_CLASSIC = 0,
-        GH_HYBRID,
-        GH_BINARY,
-    };
-
-    enum
-    {
         OUT_RAW = 0,
         OUT_MASK,
         OUT_COLOR,
@@ -84,9 +77,6 @@ public:
     int get_output_mode(void) const { return noutmode; }
     void set_output_mode(const int n) { noutmode = n; }
 
-    int get_gh_mode(void) const { return nghmode; }
-    void set_gh_mode(const int n) { nghmode = n; op_id = OP_UPDATE;  is_op_required = true; }
-
     double get_img_scale(void) const { return vimgscale[nimgscale]; }
     void inc_img_scale(void) { nimgscale = (nimgscale < (vimgscale.size() - 1)) ? nimgscale + 1 : nimgscale; }
     void dec_img_scale(void) { nimgscale = (nimgscale > 0) ? nimgscale - 1 : nimgscale; };
@@ -120,9 +110,6 @@ private:
 
     // Output mode (raw, mask, or color)
     int noutmode;
-
-    // Generalized Hough mode (classic, hybrid, binary)
-    int nghmode;
 
     // Type of operation that is required
     int op_id;

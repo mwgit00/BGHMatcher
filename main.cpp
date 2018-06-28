@@ -157,22 +157,8 @@ void reload_template(
     std::string spath = DATA_PATH + rinfo.sname;
     template_image = imread(spath, IMREAD_GRAYSCALE);
     
-    switch (rknobs.get_gh_mode())
-    {
-    case Knobs::GH_BINARY:
-        BGHMatcher::init_binary_ghough_table_from_img(
-            template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr, 8.0 });
-        break;
-    case Knobs::GH_HYBRID:
-        BGHMatcher::init_hybrid_ghough_table_from_img(
-            template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr, 8.0 });
-        break;
-    case Knobs::GH_CLASSIC:
-    default:
-        BGHMatcher::init_classic_ghough_table_from_img(
-            template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr, 8.0 });
-        break;
-    }
+    BGHMatcher::init_ghough_table_from_img(
+        template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr, 8.0 });
     
     std::cout << "Loaded template (blur,sobel) = " << kblur << "," << ksobel << "): ";
     std::cout << rinfo.sname << " " << rtable.total_votes << std::endl;
@@ -191,8 +177,7 @@ void loop(void)
     Mat img;
     Mat img_viewer;
     Mat img_gray;
-    Mat img_blur;
-    Mat img_bgrad;
+    Mat img_grad;
     Mat img_channels[3];
     Mat img_match;
 
@@ -306,39 +291,17 @@ void loop(void)
         }
 
         // apply the current blur setting
-        GaussianBlur(img_gray, img_blur, { kblur, kblur }, 0);
+        if (kblur > 1)
+        {
+            GaussianBlur(img_gray, img_gray, { kblur, kblur }, 0);
+        }
 
         QueryPerformanceCounter(&lix0);
 
-        switch (theKnobs.get_gh_mode())
-        {
-            case Knobs::GH_BINARY:
-            {
-                // create the "binary gradient" image from blurred input image
-                // use max-min threshold to mask pixels at strong gradients
-                int krng = static_cast<int>(theGHData.params.mag_thr * BGHMatcher::RNG_FAC);
-                BGHMatcher::cmp8NeighborsGTRng<uint8_t>(img_blur, img_bgrad, krng);
-                break;
-            }
-            case Knobs::GH_HYBRID:
-            {
-                // create the "binary gradient" image from blurred input image
-                // use Sobel gradient magnitude to mask pixels at strong gradients
-                BGHMatcher::cmp8NeighborsGTRng<uint8_t>(img_blur, img_bgrad);
-                BGHMatcher::apply_sobel_gradient_mask(img_gray, img_bgrad, theGHData.params.ksobel, theGHData.params.mag_thr);
-                break;
-            }
-            case Knobs::GH_CLASSIC:
-            default:
-            {
-                // create image of encoded Sobel gradient orientations from blurred input image
-                BGHMatcher::create_masked_gradient_orientation_img(img_gray, img_bgrad, theGHData.params);
-                break;
-            }
-        }
-
+        // create image of encoded Sobel gradient orientations from blurred input image
         // then apply Generalized Hough transform and locate maximum (best match)
-        BGHMatcher::apply_ghough_transform_allpix<CV_16U, uint16_t>(img_bgrad, img_match, theGHData);
+        BGHMatcher::create_masked_gradient_orientation_img(img_gray, img_grad, theGHData.params);
+        BGHMatcher::apply_ghough_transform_allpix<CV_16U, uint16_t>(img_grad, img_match, theGHData);
 
         // calculate time for one GH calculation
         QueryPerformanceCounter(&lix1);
@@ -365,15 +328,12 @@ void loop(void)
             }
             case Knobs::OUT_MASK:
             {
-                // display pre-processed gray input image
+                // display encoded gradient image
                 // show red overlay of any matches that exceed arbitrary threshold
                 Mat match_mask;
                 std::vector<std::vector<cv::Point>> contours;
-                //if (theKnobs.get_gh_mode() == Knobs::GH_CLASSIC)
-                {
-                    normalize(img_bgrad, img_bgrad, 0, 255, cv::NORM_MINMAX);
-                }
-                cvtColor(img_bgrad, img_viewer, COLOR_GRAY2BGR);
+                normalize(img_grad, img_grad, 0, 255, cv::NORM_MINMAX);
+                cvtColor(img_grad, img_viewer, COLOR_GRAY2BGR);
                 normalize(img_match, img_match, 0, 1, cv::NORM_MINMAX);
                 match_mask = (img_match > MATCH_DISPLAY_THRESHOLD);
                 findContours(match_mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_NONE);

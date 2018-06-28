@@ -26,32 +26,11 @@
 #include "opencv2/imgproc.hpp"
 
 
-// Bit index and variable naming convention for 8-neighbor masks:
-//
-// 5 6 7      nn n0 np
-// 4 * 0      0n 00 0p
-// 3 2 1      pn p0 pp
-
-
 namespace BGHMatcher
 {
     constexpr double ANG_STEP_MAX = 254.0;
     constexpr double ANG_STEP_MIN = 4.0;
-    constexpr double RNG_FAC = 127.0;       // fudge factor to make magnitude and range factors roughly the same
 
-
-    // Masks for selecting number of adjacent bits to consider.
-    // Using 4 adjacent bits seems to be best default choice.
-    enum
-    {
-        N8_3ADJ = (1 << 2), // consider 3 adjacent bits (might help or hurt)
-        N8_4ADJ = (1 << 3), // consider 4 adjacent bits (usually best choice by itself)
-        N8_5ADJ = (1 << 4), // consider 5 adjacent bits (might help or hurt)
-        N8_3OR4 = (3 << 2), // consider 3 and 4 adjacent bits
-        N8_4OR5 = (3 << 3), // consider 4 and 5 adjacent bits
-        N8_345 =  (7 << 2), // consider 3, 4, and 5 adjacent bits
-    };
-    
 
     // structure that combines an image point and a vote count for that point
     typedef struct _T_pt_votes_struct
@@ -101,116 +80,6 @@ namespace BGHMatcher
             for (size_t i = 0; i < 256; i++) { elem[i].clear(); }
         }
     } T_ghough_table;
-
-
-    // Membership "set" for values 0-255 implemented as 256 bit flags.
-    typedef struct _T_256_flags_struct
-    {
-        uint32_t bits[8];
-        _T_256_flags_struct() { memset(bits, 0, sizeof(bits)); }
-        ~_T_256_flags_struct() {}
-        void set(const uint8_t n) { bits[n >> 5] |= (1 << (n & 0x1F)); }
-        void clr(const uint8_t n) { bits[n >> 5] &= ~(1 << (n & 0x1F)); }
-        bool get(const uint8_t n) const { return (bits[n >> 5] & (1 << (n & 0x1F))) ? true : false; }
-        void set_all(void) { memset(bits, 0xFF, sizeof(bits)); }
-    } T_256_flags;
-
-
-    // This produces a "binary gradient" image with features for the Generalized Hough transform.
-    // It compares a central pixel with its 8-neighbors and sets bits if central pixel is larger.
-    // An output pixel with a value of 255 is greater than all of its 8-neighbors.  The range
-    // (max-min) of the 3x3 neighborhood can be used as a threshold to mask pixels at strong
-    // gradients.  Pixels on weak gradients are set to 0.  A threshold of 0 masks NO pixels.
-    // Input image is grayscale.  Template parameter specifies input pixel type, usually uint8_t.
-    // Output image is CV_8U type with same size as input image.  Border pixels are 0.
-    template<typename T>
-    void cmp8NeighborsGTRng(const cv::Mat& rsrc, cv::Mat& rdst, const uint8_t rng = 0)
-    {
-        // output is always 8-bit unsigned
-        rdst = cv::Mat::zeros(rsrc.size(), CV_8U);
-        for (int i = 1; i < rsrc.rows - 1; i++)
-        {
-            // initialize pointers to central pixel and its 8-neighbors
-            const T * pixsnn = rsrc.ptr<T>(i - 1);
-            const T * pixs0n = rsrc.ptr<T>(i + 0);
-            const T * pixspn = rsrc.ptr<T>(i + 1);
-            const T * pixsn0 = pixsnn + 1;
-            const T * pixs00 = pixs0n + 1;
-            const T * pixsp0 = pixspn + 1;
-            const T * pixsnp = pixsn0 + 1;
-            const T * pixs0p = pixs00 + 1;
-            const T * pixspp = pixsp0 + 1;
-
-            // initialize pointer to output pixel
-            uint8_t * pixd = rdst.ptr<uint8_t>(i) + 1;
-
-            // iterate along row
-            // if the max of the 3x3 neighborhood exceeds the min by a threshold
-            // then the new output pixel value is the "greater than" mask for the 8-neighbors
-            // otherwise the output pixel will be set to 0
-            for (int j = 1; j < rsrc.cols - 1; j++)
-            {
-                T q = *(pixs00);
-                T umin = q;
-                T umax = q;
-                uint8_t bg = 0;
-
-                // if range threshold is not zero then find min-max of neighborhood
-                if (rng != 0)
-                {
-                    // determine maximum of center pixel and its neighbors
-                    umax = cv::max(umax, *(pixs0p));
-                    umax = cv::max(umax, *(pixsp0));
-                    umax = cv::max(umax, *(pixs0n));
-                    umax = cv::max(umax, *(pixsn0));
-                    umin = cv::min(umin, *(pixs0p));
-                    umin = cv::min(umin, *(pixsp0));
-                    umin = cv::min(umin, *(pixs0n));
-                    umin = cv::min(umin, *(pixsn0));
-#ifdef USE_3X3_MIN_MAX
-                    // diagonal neighbors
-                    umax = cv::max(umax, *(pixspp));
-                    umax = cv::max(umax, *(pixspn));
-                    umax = cv::max(umax, *(pixsnn));
-                    umax = cv::max(umax, *(pixsnp));
-                    umin = cv::min(umin, *(pixspp));
-                    umin = cv::min(umin, *(pixspn));
-                    umin = cv::min(umin, *(pixsnn));
-                    umin = cv::min(umin, *(pixsnp));
-#endif
-                }
-
-                // if max-min exceeds threshold then do "greater-than" encoding for 8-neighbors
-                // this step will always be performed if threshold is 0
-                if ((umax - umin) >= rng)
-                {
-                    bg =
-                        ((q > *(pixs0p))     ) |
-                        ((q > *(pixspp)) << 1) |
-                        ((q > *(pixsp0)) << 2) |
-                        ((q > *(pixspn)) << 3) |
-                        ((q > *(pixs0n)) << 4) |
-                        ((q > *(pixsnn)) << 5) |
-                        ((q > *(pixsn0)) << 6) |
-                        ((q > *(pixsnp)) << 7);
-                }
-
-                // scoot the pointers for the 3x3 neighborhood
-                pixs0p++;
-                pixspp++;
-                pixsp0++;
-                pixspn++;
-                pixs0n++;
-                pixsnn++;
-                pixsn0++;
-                pixsnp++;
-                pixs00++;
-
-                // set the output pixel and scoot its pointer
-                *(pixd++) = bg;
-            }
-        }
-    }
 
 
     // Applies Generalized Hough transform to an encoded gradient image (CV_8U).
@@ -287,23 +156,6 @@ namespace BGHMatcher
     }
 
 
-    // Creates a set with all 8-bit values that have the specified number(s) of adjacent bits.
-    // The bits in the mask specify the number of adjacent bits to consider, 1 through 8.
-    void create_adjacent_bits_set(
-        BGHMatcher::T_256_flags& rflags,
-        const uint8_t mask);
-
-
-    // Calculates gradient magnitude of input grayscale image.  Creates a mask for all
-    // gradient magnitudes above a threshold.  Applies the mask to an input/output image.
-    // Pixels at small gradients will be set to 0 in the input/output CV_8U image.
-    void apply_sobel_gradient_mask(
-        const cv::Mat& rimg,
-        cv::Mat& rmod,
-        const int kblur,
-        const double mag_thr);
-
-
     // This is the preprocessing step for the "classic" Generalized Hough algorithm.
     // Calculates Sobel derivatives of input grayscale image.  Converts to polar coordinates and
     // finds magnitude and angle (orientation).  Converts angle to integer with 4 to 254 steps.
@@ -315,36 +167,17 @@ namespace BGHMatcher
 
     
     // Creates a Generalized Hough lookup table from encoded gradient input image (CV_8U).
-    // A set of flags determines which encoded gradient pixel values to use.
     // The scale parameter shrinks or expands the point set.
     void create_ghough_table(
-        const cv::Mat& rbgrad,
-        const BGHMatcher::T_256_flags& rflags,
+        const cv::Mat& rgrad,
         const double scale,
         BGHMatcher::T_ghough_table& rtable);
 
 
-    void init_binary_ghough_table_from_img(
-        cv::Mat& rimg,
-        BGHMatcher::T_ghough_table& rtable,
-        const BGHMatcher::T_ghough_params& rparams);
-
-
     // Helper function for initializing Generalized Hough table from grayscale image.
-    // This uses a hybrid approach with "binary gradients" and Sobel magnitude mask.
     // Default parameters are good starting point for doing object identification.
     // Table must be a newly created object with blank data.
-    void init_hybrid_ghough_table_from_img(
-        cv::Mat& rimg,
-        BGHMatcher::T_ghough_table& rtable,
-        const BGHMatcher::T_ghough_params& rparams);
-
-
-    // Helper function for initializing Generalized Hough table from grayscale image.
-    // This uses the classic approach of encoding the Sobel gradient orientation.
-    // Default parameters are good starting point for doing object identification.
-    // Table must be a newly created object with blank data.
-    void init_classic_ghough_table_from_img(
+    void init_ghough_table_from_img(
         cv::Mat& rimg,
         BGHMatcher::T_ghough_table& rtable,
         const BGHMatcher::T_ghough_params& rparams);

@@ -33,7 +33,6 @@ Knobs::Knobs() :
     kcliplimit(4),
     nchannel(Knobs::ALL_CHANNELS),
     noutmode(Knobs::OUT_COLOR),
-    nghmode(Knobs::GH_CLASSIC),
     op_id(Knobs::OP_NONE),
     nimgscale(3),
     nksize(4),
@@ -51,17 +50,16 @@ Knobs::~Knobs()
 void Knobs::show_help(void) const
 {
     std::cout << std::endl;
-    std::cout << "KEY FUNCTION" << std::endl;
-    std::cout << "--- ------------------------------------------------------" << std::endl;
-    std::cout << "Esc Quit" << std::endl;
-    std::cout << "1,2,3   Channel (Blue, Green, Red)" << std::endl;
+    std::cout << "KEYS    FUNCTION" << std::endl;
+    std::cout << "-----   ------------------------------------------------------" << std::endl;
+    std::cout << "Esc     Quit" << std::endl;
+    std::cout << "1,2,3   Use one BGR channel (Blue, Green, Red)" << std::endl;
     std::cout << "4       Convert BGR input to grayscale" << std::endl;
-    std::cout << "5,6,7   Generalized Hough mode (Binary, Hybrid, Classic)" << std::endl;
     std::cout << "8,9,0   Output mode (raw match, pre-processed and masked, color)" << std::endl;
-    std::cout << "-,=     Adjust pre-blur (decrease, increase)" << std::endl;
-    std::cout << "_,+     Adjust CLAHE clip limit (decrease, increase)" << std::endl;
-    std::cout << "[,]     Adjust image scale (decrease, increase)" << std::endl;
-    std::cout << "{,}     Adjust Sobel kernel size (decrease, increase)" << std::endl;
+    std::cout << "- or =  Adjust pre-blur (decrease, increase)" << std::endl;
+    std::cout << "_ or +  Adjust CLAHE clip limit (decrease, increase)" << std::endl;
+    std::cout << "[ or ]  Adjust image scale (decrease, increase)" << std::endl;
+    std::cout << "{ or }  Adjust Sobel kernel size (decrease, increase)" << std::endl;
     std::cout << "e       Toggle histogram equalization" << std::endl;
     std::cout << "r       Toggle recording mode" << std::endl;
     std::cout << "t       Select next template from collection" << std::endl;
@@ -89,9 +87,6 @@ void Knobs::handle_keypress(const char ckey)
             set_channel(ckey - '1');
             break;
         }
-        case '5': set_gh_mode(Knobs::GH_BINARY); break;
-        case '6': set_gh_mode(Knobs::GH_HYBRID); break;
-        case '7': set_gh_mode(Knobs::GH_CLASSIC); break;
         case '8': set_output_mode(Knobs::OUT_RAW); break;
         case '9': set_output_mode(Knobs::OUT_MASK); break;
         case '0': set_output_mode(Knobs::OUT_COLOR); break;
@@ -172,12 +167,10 @@ void Knobs::handle_keypress(const char ckey)
     {
         const std::vector<std::string> srgb({ "Blue ", "Green", "Red  ", "Gray " });
         const std::vector<std::string> sout({ "Raw  ", "Mask ", "Color" });
-        const std::vector<std::string> sghm({ "Cla", "Hyb", "Bin" });
         std::cout << "Equ=" << is_equ_hist_enabled;
         std::cout << "  Clip=" << kcliplimit;
         std::cout << "  Ch=" << srgb[nchannel];
         std::cout << "  Blur=" << kpreblur;
-        std::cout << "  GH=" << sghm[nghmode];
         std::cout << "  Out=" << sout[noutmode];
         std::cout << "  Scale=" << vimgscale[nimgscale];
         std::cout << std::endl;
