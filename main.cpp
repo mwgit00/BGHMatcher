@@ -37,7 +37,7 @@
 
 #define MATCH_DISPLAY_THRESHOLD (0.8)           // arbitrary
 #define MOVIE_PATH              ".\\movie\\"    // user may need to create or change this
-#define DATA_PATH               "..\\TOGMatcher\\data\\"     // user may need to change this
+#define DATA_PATH               ".\\data\\"     // user may need to change this
 
 
 using namespace cv;
@@ -60,10 +60,11 @@ size_t nfile = 0;
 
 const std::vector<T_file_info> vfiles =
 {
-    { default_mag_thr, "circle_b_on_w.png"},
-    { default_mag_thr, "bottle_20perc_top_b_on_w.png"},
-    { default_mag_thr, "panda_face.png"},
-    { default_mag_thr, "stars_main.png"}
+    { default_mag_thr, "circle_b_on_w.png" },
+    { default_mag_thr, "ring_b_on_w.png" },
+    { default_mag_thr, "bottle_20perc_top_b_on_w.png" },
+    { default_mag_thr, "panda_face.png" },
+    { default_mag_thr, "stars_main.png" }
 };
 
 
@@ -104,7 +105,7 @@ void image_output(
 
     // determine size of "target" box
     // it will vary depending on the scale parameter
-    Size rsz = rtable.sz;
+    Size rsz = rtable.img_sz;
     rsz.height *= scale;
     rsz.width *= scale;
     Point corner = { rptmax.x - rsz.width / 2, rptmax.y - rsz.height / 2 };
@@ -183,12 +184,6 @@ void loop(void)
 
     BGHMatcher::T_ghough_table theGHData;
     Ptr<CLAHE> pCLAHE = createCLAHE();
-
-    LARGE_INTEGER lix0;
-    LARGE_INTEGER lix1;
-    LARGE_INTEGER lixf;
-    LARGE_INTEGER ElapsedMicroseconds;
-    QueryPerformanceFrequency(&lixf);
 
     // need a 0 as argument
     VideoCapture vcap(0);
@@ -296,20 +291,10 @@ void loop(void)
             GaussianBlur(img_gray, img_gray, { kblur, kblur }, 0);
         }
 
-        QueryPerformanceCounter(&lix0);
-
         // create image of encoded Sobel gradient orientations from blurred input image
         // then apply Generalized Hough transform and locate maximum (best match)
         BGHMatcher::create_masked_gradient_orientation_img(img_gray, img_grad, theGHData.params);
         BGHMatcher::apply_ghough_transform_allpix<CV_16U, uint16_t>(img_grad, img_match, theGHData);
-
-        // calculate time for one GH calculation
-        QueryPerformanceCounter(&lix1);
-        ElapsedMicroseconds.QuadPart = lix1.QuadPart - lix0.QuadPart;
-        ElapsedMicroseconds.QuadPart *= 1000000;
-        ElapsedMicroseconds.QuadPart /= lixf.QuadPart;
-
-        //std::cout << ElapsedMicroseconds.QuadPart << std::endl;
 
         minMaxLoc(img_match, nullptr, &qmax, nullptr, &ptmax);
 
@@ -326,7 +311,7 @@ void loop(void)
                 cvtColor(temp_8U, img_viewer, COLOR_GRAY2BGR);
                 break;
             }
-            case Knobs::OUT_MASK:
+            case Knobs::OUT_GRAD:
             {
                 // display encoded gradient image
                 // show red overlay of any matches that exceed arbitrary threshold
@@ -338,6 +323,11 @@ void loop(void)
                 match_mask = (img_match > MATCH_DISPLAY_THRESHOLD);
                 findContours(match_mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_NONE);
                 drawContours(img_viewer, contours, -1, SCA_RED, -1, LINE_8, noArray(), INT_MAX);
+                break;
+            }
+            case Knobs::OUT_PREP:
+            {
+                cvtColor(img_gray, img_viewer, COLOR_GRAY2BGR);
                 break;
             }
             case Knobs::OUT_COLOR:

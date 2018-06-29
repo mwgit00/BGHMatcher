@@ -32,16 +32,6 @@ namespace BGHMatcher
     constexpr double ANG_STEP_MIN = 4.0;
 
 
-    // structure that combines an image point and a vote count for that point
-    typedef struct _T_pt_votes_struct
-    {
-        cv::Point pt;
-        uint16_t votes;
-        _T_pt_votes_struct() : pt{}, votes(0) {}
-        _T_pt_votes_struct(const cv::Point& _pt, const uint16_t _v) : pt{_pt}, votes(_v) {}
-    } T_pt_votes;
-    
-
     // parameters used to create Generalized Hough lookup table
     typedef struct _T_ghough_params_struct
     {
@@ -55,29 +45,56 @@ namespace BGHMatcher
         _T_ghough_params_struct(const int kb, const int ks, const double s, const double m, const double a) :
             kblur(kb), ksobel(ks), scale(s), mag_thr(m), ang_step(a) {}
     } T_ghough_params;
-    
+
+
+    // structure that combines an image point and a vote count for that point
+    typedef struct _T_pt_votes_struct
+    {
+        cv::Point pt;
+        uint16_t votes;
+        _T_pt_votes_struct() : pt{}, votes(0) {}
+        _T_pt_votes_struct(const cv::Point& _pt, const uint16_t _v) : pt{_pt}, votes(_v) {}
+    } T_pt_votes;
+
+
+    // one gradient orientation element for the Generalized Hough lookup table
+    typedef struct _T_ghough_elem_struct
+    {
+        size_t ct;
+        T_pt_votes * pt_votes;
+        _T_ghough_elem_struct() : ct(0), pt_votes(nullptr) {}
+        ~_T_ghough_elem_struct() { clear(); }
+        void clear() { ct = 0;  if (pt_votes) { delete[] pt_votes; } pt_votes = nullptr; }
+    } T_ghough_elem;
+
     
     // Non-STL data structure for Generalized Hough lookup table
     typedef struct _T_ghough_table_struct
     {
         T_ghough_params params;
-        cv::Size sz;
+        cv::Size img_sz;
+        size_t elem_ct;
         size_t total_votes;
         size_t total_entries;
-        struct _elem_struct
-        {
-            size_t ct;
-            T_pt_votes * pt_votes;
-            _elem_struct() : ct(0), pt_votes(nullptr) {}
-            void clear() { ct = 0;  if (pt_votes) { delete[] pt_votes; } pt_votes = nullptr; }
-        } elem[256];
-        _T_ghough_table_struct() : params(), sz(0, 0), total_votes(0), total_entries(0) {}
+        T_ghough_elem * elems;
+
+        _T_ghough_table_struct() :
+            params(), img_sz(0, 0), elem_ct(0), total_votes(0), total_entries(0), elems(nullptr) {}
+
+        ~_T_ghough_table_struct() { clear(); }
+
         void clear()
         {
-            sz = { 0,0 };
+            if (elems != nullptr)
+            {
+                for (size_t i = 0; i < elem_ct; i++) { elems[i].clear(); }
+                delete[] elems;
+            }
+            img_sz = { 0, 0 };
             total_votes = 0;
             total_entries = 0;
-            for (size_t i = 0; i < 256; i++) { elem[i].clear(); }
+            elems = nullptr;
+            elem_ct = 0;
         }
     } T_ghough_table;
 
@@ -94,16 +111,16 @@ namespace BGHMatcher
         const BGHMatcher::T_ghough_table& rtable)
     {
         rout = cv::Mat::zeros(rimg.size(), E);
-        for (int i = rtable.sz.height / 2; i < rimg.rows - rtable.sz.height / 2; i++)
+        for (int i = rtable.img_sz.height / 2; i < rimg.rows - rtable.img_sz.height / 2; i++)
         {
             const uint8_t * pix = rimg.ptr<uint8_t>(i);
-            for (int j = rtable.sz.width / 2; j < rimg.cols - rtable.sz.width / 2; j++)
+            for (int j = rtable.img_sz.width / 2; j < rimg.cols - rtable.img_sz.width / 2; j++)
             {
                 // look up voting table for pixel
                 // iterate through the points (if any) and add votes
                 uint8_t uu = pix[j];
-                T_pt_votes * pt_votes = rtable.elem[uu].pt_votes;
-                const size_t ct = rtable.elem[uu].ct;
+                T_pt_votes * pt_votes = rtable.elems[uu].pt_votes;
+                const size_t ct = rtable.elems[uu].ct;
                 for (size_t k = 0; k < ct; k++)
                 {
                     const cv::Point& rp = pt_votes[k].pt;
@@ -134,10 +151,10 @@ namespace BGHMatcher
             for (int j = 1; j < (rimg.cols - 1); j++)
             {
                 // look up voting table for pixel
-                // iterate through the points (if any) and add votes
+                // iterate through the points and add votes
                 uint8_t uu = pix[j];
-                T_pt_votes * pt_votes = rtable.elem[uu].pt_votes;
-                const size_t ct = rtable.elem[uu].ct;
+                T_pt_votes * pt_votes = rtable.elems[uu].pt_votes;
+                const size_t ct = rtable.elems[uu].ct;
                 for (size_t k = 0; k < ct; k++)
                 {
                     // only vote if pixel is within output image bounds

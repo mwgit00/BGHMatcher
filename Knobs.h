@@ -37,7 +37,8 @@ public:
     enum
     {
         OUT_RAW = 0,
-        OUT_MASK,
+        OUT_GRAD,
+        OUT_PREP,
         OUT_COLOR,
     };
 

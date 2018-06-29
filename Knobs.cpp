@@ -50,22 +50,21 @@ Knobs::~Knobs()
 void Knobs::show_help(void) const
 {
     std::cout << std::endl;
-    std::cout << "KEYS    FUNCTION" << std::endl;
-    std::cout << "-----   ------------------------------------------------------" << std::endl;
-    std::cout << "Esc     Quit" << std::endl;
-    std::cout << "1,2,3   Use one BGR channel (Blue, Green, Red)" << std::endl;
-    std::cout << "4       Convert BGR input to grayscale" << std::endl;
-    std::cout << "8,9,0   Output mode (raw match, pre-processed and masked, color)" << std::endl;
-    std::cout << "- or =  Adjust pre-blur (decrease, increase)" << std::endl;
-    std::cout << "_ or +  Adjust CLAHE clip limit (decrease, increase)" << std::endl;
-    std::cout << "[ or ]  Adjust image scale (decrease, increase)" << std::endl;
-    std::cout << "{ or }  Adjust Sobel kernel size (decrease, increase)" << std::endl;
-    std::cout << "e       Toggle histogram equalization" << std::endl;
-    std::cout << "r       Toggle recording mode" << std::endl;
-    std::cout << "t       Select next template from collection" << std::endl;
-    std::cout << "u       Update Hough parameters from current settings" << std::endl;
-    std::cout << "v       Create video from files in movie folder" << std::endl;
-    std::cout << "?       Display this help info" << std::endl;
+    std::cout << "KEYS      FUNCTION" << std::endl;
+    std::cout << "-----     ------------------------------------------------------" << std::endl;
+    std::cout << "Esc       Quit" << std::endl;
+    std::cout << "1,2,3,4   Choose BGR channel (Blue, Green, Red, BGR-to-Gray)" << std::endl;
+    std::cout << "7,8,9,0   Output mode (raw match, gradients, pre-proc, color)" << std::endl;
+    std::cout << "- or =    Adjust pre-blur (decrease, increase)" << std::endl;
+    std::cout << "_ or +    Adjust CLAHE clip limit (decrease, increase)" << std::endl;
+    std::cout << "[ or ]    Adjust image scale (decrease, increase)" << std::endl;
+    std::cout << "{ or }    Adjust Sobel kernel size (decrease, increase)" << std::endl;
+    std::cout << "e         Toggle histogram equalization" << std::endl;
+    std::cout << "r         Toggle recording mode" << std::endl;
+    std::cout << "t         Select next template from collection" << std::endl;
+    std::cout << "u         Update Hough parameters from current settings" << std::endl;
+    std::cout << "v         Create video from files in movie folder" << std::endl;
+    std::cout << "?         Display this help info" << std::endl;
     std::cout << std::endl;
 }
 
@@ -87,8 +86,9 @@ void Knobs::handle_keypress(const char ckey)
             set_channel(ckey - '1');
             break;
         }
-        case '8': set_output_mode(Knobs::OUT_RAW); break;
-        case '9': set_output_mode(Knobs::OUT_MASK); break;
+        case '7': set_output_mode(Knobs::OUT_RAW); break;
+        case '8': set_output_mode(Knobs::OUT_GRAD); break;
+        case '9': set_output_mode(Knobs::OUT_PREP); break;
         case '0': set_output_mode(Knobs::OUT_COLOR); break;
         case '+': inc_clip_limit(); break;
         case '_': dec_clip_limit(); break;
@@ -166,7 +166,7 @@ void Knobs::handle_keypress(const char ckey)
     if (is_valid && !is_op_required)
     {
         const std::vector<std::string> srgb({ "Blue ", "Green", "Red  ", "Gray " });
-        const std::vector<std::string> sout({ "Raw  ", "Mask ", "Color" });
+        const std::vector<std::string> sout({ "Raw  ", "Grad ", "Prep ", "Color" });
         std::cout << "Equ=" << is_equ_hist_enabled;
         std::cout << "  Clip=" << kcliplimit;
         std::cout << "  Ch=" << srgb[nchannel];

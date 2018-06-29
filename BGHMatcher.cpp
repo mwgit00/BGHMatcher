@@ -54,6 +54,7 @@ namespace BGHMatcher
 
         // iterate through the gradient image pixel-by-pixel
         // use STL structures to build a lookup table dynamically
+        uint8_t max_code = 0;
         std::map<uint8_t, std::map<cv::Point, uint16_t, cmpCvPoint>> lookup_table;
         for (int i = 0; i < rgrad.rows; i++)
         {
@@ -71,29 +72,44 @@ namespace BGHMatcher
                     offset_pt.x = static_cast<int>(fac * offset_pt.x);
                     offset_pt.y = static_cast<int>(fac * offset_pt.y);
                     lookup_table[uu][offset_pt]++;
+                    max_code = (uu > max_code) ? uu : max_code;
                 }
             }
         }
 
+        // add blank entry for any code not in map for codes 0-max
+        for (uint8_t key = 0; key <= max_code; key++)
+        {
+            if (lookup_table.count(key) == 0)
+            {
+                lookup_table[key] = {};
+            }
+        }
+        
         // blow away any old data in table
         rtable.clear();
 
         // then put lookup table into a fixed non-STL structure
         // that is much more efficient when running debug code
-        rtable.sz = rgrad.size();
+        rtable.img_sz = rgrad.size();
+        rtable.elem_ct = lookup_table.size();
+        rtable.elems = new T_ghough_elem[rtable.elem_ct];
         for (const auto& r : lookup_table)
         {
             uint8_t key = r.first;
             size_t n = r.second.size();
-            rtable.elem[key].ct = n;
-            rtable.elem[key].pt_votes = new T_pt_votes[n];
-            size_t k = 0;
-            for (const auto& rr : r.second)
+            if (n > 0)
             {
-                cv::Point pt = rr.first;
-                rtable.elem[key].pt_votes[k++] = { pt, rr.second };
-                rtable.total_votes += rr.second;
-                rtable.total_entries++;
+                rtable.elems[key].ct = n;
+                rtable.elems[key].pt_votes = new T_pt_votes[n];
+                size_t k = 0;
+                for (const auto& rr : r.second)
+                {
+                    cv::Point pt = rr.first;
+                    rtable.elems[key].pt_votes[k++] = { pt, rr.second };
+                    rtable.total_votes += rr.second;
+                    rtable.total_entries++;
+                }
             }
         }
     }
@@ -126,6 +142,8 @@ namespace BGHMatcher
         temp_mask = (temp_mag > (qmax * rparams.mag_thr));
 
         // scale, offset, and convert the angle image so 0-2pi becomes integers 1 to (ANG_STEP+1)
+        // note that the angle can sometimes be 2pi which is equivalent to an angle of 0
+        // for some binary source images not all gradient codes may be generated
         ang_step = (ang_step > ANG_STEP_MAX) ? ANG_STEP_MAX : ang_step;
         ang_step = (ang_step < ANG_STEP_MIN) ? ANG_STEP_MIN: ang_step;
         temp_ang.convertTo(rmgo, CV_8U, ang_step / (CV_2PI), 1.0);
