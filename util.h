@@ -29,6 +29,7 @@
 typedef struct
 {
     double mag_thr;
+    double img_scale;
     std::string sname;
 } T_file_info;
 

@@ -27,7 +27,7 @@
 
 Knobs::Knobs() :
     is_op_required(false),
-    is_equ_hist_enabled(true),
+    is_equ_hist_enabled(false),
     is_record_enabled(false),
     kpreblur(7),
     kcliplimit(4),

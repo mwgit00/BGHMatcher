@@ -54,17 +54,17 @@ using namespace cv;
 
 Mat template_image;
 const char * stitle = "BGHMatcher";
-const double default_mag_thr = 0.1;
+const double default_mag_thr = 0.2;
 int n_record_ctr = 0;
 size_t nfile = 0;
 
 const std::vector<T_file_info> vfiles =
 {
-    { default_mag_thr, "circle_b_on_w.png" },
-    { default_mag_thr, "ring_b_on_w.png" },
-    { default_mag_thr, "bottle_20perc_top_b_on_w.png" },
-    { default_mag_thr, "panda_face.png" },
-    { default_mag_thr, "stars_main.png" }
+    { default_mag_thr, 1.5, "circle_b_on_w.png" },
+    { default_mag_thr, 1.5, "ring_b_on_w.png" },
+    { default_mag_thr, 3.0, "bottle_20perc_top_b_on_w.png" },
+    { default_mag_thr, 3.5, "panda_face.png" },
+    { default_mag_thr, 3.0, "stars_main.png" }
 };
 
 
@@ -114,7 +114,7 @@ void image_output(
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(2) << (qmax / rtable.total_votes);
 
-    // draw current template in upper right corner with blue box around it
+    // draw current template in upper right corner
     Mat bgr_template_img;
     cvtColor(template_image, bgr_template_img, COLOR_GRAY2BGR);
     Size osz = rimg.size();
@@ -122,18 +122,8 @@ void image_output(
     Rect roi = cv::Rect(osz.width - tsz.width, 0, tsz.width, tsz.height);
     bgr_template_img.copyTo(rimg(roi));
 
-    // save each frame to a file if recording
-    // and use magenta box around template image to indicate recording mode is active
-    cv::Scalar box_color = SCA_BLUE;
-    if (rknobs.get_record_enabled())
-    {
-        std::ostringstream osx;
-        osx << MOVIE_PATH << "img_" << std::setfill('0') << std::setw(5) << n_record_ctr << ".png";
-        imwrite(osx.str(), rimg);
-        n_record_ctr++;
-        box_color = SCA_MAGENTA;
-    }
-
+    // draw colored box around template image (magenta if recording)
+    cv::Scalar box_color = (rknobs.get_record_enabled()) ? SCA_MAGENTA : SCA_BLUE;
     rectangle(rimg, { osz.width - tsz.width, 0 }, { osz.width, tsz.height }, box_color, 2);
 
     // draw black background box then draw text score on top of it
@@ -143,6 +133,15 @@ void image_output(
     // draw rectangle around best match with yellow dot at center
     rectangle(rimg, { corner.x, corner.y, rsz.width, rsz.height }, SCA_GREEN, 2);
     circle(rimg, rptmax, 2, SCA_YELLOW, -1);
+
+    // save each frame to a file if recording
+    if (rknobs.get_record_enabled())
+    {
+        std::ostringstream osx;
+        osx << MOVIE_PATH << "img_" << std::setfill('0') << std::setw(5) << n_record_ctr << ".png";
+        imwrite(osx.str(), rimg);
+        n_record_ctr++;
+    }
 
     cv::imshow(stitle, rimg);
 }
@@ -159,7 +158,7 @@ void reload_template(
     template_image = imread(spath, IMREAD_GRAYSCALE);
     
     BGHMatcher::init_ghough_table_from_img(
-        template_image, rtable, { kblur, ksobel, 1.0, rinfo.mag_thr, 8.0 });
+        template_image, rtable, { kblur, ksobel, rinfo.img_scale, rinfo.mag_thr, 8.0 });
     
     std::cout << "Loaded template (blur,sobel) = " << kblur << "," << ksobel << "): ";
     std::cout << rinfo.sname << " " << rtable.total_votes << std::endl;
