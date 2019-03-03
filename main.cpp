@@ -246,7 +246,7 @@ void loop(void)
                 get_dir_list(MOVIE_PATH, "*.png", listOfPNG);
                 bool is_ok = make_video(15.0, MOVIE_PATH,
                     "movie.mov",
-                    CV_FOURCC('M', 'P', '4', 'V'),
+                    VideoWriter::fourcc('M', 'P', '4', 'V'),
                     listOfPNG);
                 std::cout << ((is_ok) ? "SUCCESS!" : "FAILURE!") << std::endl;
             }
