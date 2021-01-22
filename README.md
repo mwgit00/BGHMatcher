@@ -27,3 +27,11 @@ command-line Windows executable.  I have tested it on a Windows 7 64-bit machine
 
 I tested with a Logitech c270.  It was the cheapest one I could find that I could purchase locally.
 It was plug-and-play.
+
+## Videos
+
+Here is a demo video:
+
+https://www.youtube.com/watch?v=heNQ9mr__L8
+
+
