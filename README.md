@@ -30,8 +30,8 @@ It was plug-and-play.
 
 ## Videos
 
-Here is a demo video:
+Click the image for YouTube demo video:
 
-https://www.youtube.com/watch?v=heNQ9mr__L8
+[![BGHMatcher Demo Video](http://img.youtube.com/vi/heNQ9mr__L8/0.jpg)](http://www.youtube.com/watch?v=heNQ9mr__L8)
 
 
